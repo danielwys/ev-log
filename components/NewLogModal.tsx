@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { css } from "@/styled-system/css";
 import { sessionSchema, SessionFormData, wktPoint } from "@/lib/validation";
@@ -27,7 +27,7 @@ export function NewLogModal({ isOpen, onClose, onSuccess }: NewLogModalProps) {
     reset,
     setValue,
   } = useForm<SessionFormData>({
-    resolver: zodResolver(sessionSchema),
+    resolver: zodResolver(sessionSchema) as Resolver<SessionFormData>,
     defaultValues: {
       photos: [],
       battery_start: 20,
@@ -98,7 +98,7 @@ export function NewLogModal({ isOpen, onClose, onSuccess }: NewLogModalProps) {
         location: wktPoint(data.latitude, data.longitude),
         photos: uploadedPhotos,
         notes: data.notes || null,
-      });
+      } as any);
 
       if (error) throw error;
 

@@ -2,10 +2,8 @@
 
 import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import maplibregl from "maplibre-gl";
-import { css } from "@/styled-system/css";
 import { Session } from "@/lib/supabase";
 import { parseWktPoint } from "@/lib/validation";
-import { Zap } from "lucide-react";
 
 interface MapComponentProps {
   sessions: Session[];
@@ -89,28 +87,21 @@ export const MapComponent = forwardRef<MapComponentRef, MapComponentProps>(
         try {
           const { lat, lng } = parseWktPoint(session.location);
 
-          // Create custom marker element
+          // Create custom marker element with Tailwind classes
           const el = document.createElement("div");
-          el.className = css({
-            width: "40px",
-            height: "40px",
-            borderRadius: "full",
-            backgroundColor: selectedSession?.id === session.id ? "#3b82f6" : "#10b981",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            boxShadow: selectedSession?.id === session.id
-              ? "0 0 0 4px rgba(59, 130, 246, 0.4)"
-              : "0 2px 4px rgba(0,0,0,0.3)",
-            border: "2px solid white",
-            transition: "all 0.2s",
-            _hover: {
-              transform: "scale(1.1)",
-            },
-          });
+          const isSelected = selectedSession?.id === session.id;
+          
+          // Apply Tailwind classes
+          el.className = `
+            w-10 h-10 rounded-full flex items-center justify-center cursor-pointer 
+            border-2 border-white transition-all duration-200
+            ${isSelected ? 'bg-primary shadow-[0_0_0_4px_rgba(59,130,246,0.4)]' : 'bg-secondary shadow-[0_2px_4px_rgba(0,0,0,0.3)]'}
+          `;
+          
           el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
 
+          if (!map.current) return;
+          
           const marker = new maplibregl.Marker({ element: el })
             .setLngLat([lng, lat])
             .addTo(map.current);
@@ -145,10 +136,7 @@ export const MapComponent = forwardRef<MapComponentRef, MapComponentProps>(
     return (
       <div
         ref={mapContainer}
-        className={css({
-          width: "100%",
-          height: "100%",
-        })}
+        className="w-full h-full"
       />
     );
   }

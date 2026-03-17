@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { css } from "@/styled-system/css";
 import { MapComponent } from "@/components/Map";
 import { SidePanel } from "@/components/SidePanel";
 import { NewLogModal } from "@/components/NewLogModal";
@@ -59,7 +58,6 @@ export default function Home() {
   }, [fetchSessions]);
 
   const handleSignIn = async () => {
-    // For local development, use email OTP (simpler than OAuth setup)
     const email = prompt("Enter your email for magic link sign-in:");
     if (!email) return;
     
@@ -96,90 +94,28 @@ export default function Home() {
   };
 
   return (
-    <div
-      className={css({
-        display: "flex",
-        flexDirection: "column",
-        height: "100vh",
-        bg: "background",
-        color: "text",
-      })}
-    >
+    <div className="flex flex-col h-screen bg-background text-text">
       {/* Header */}
-      <header
-        className={css({
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          px: 4,
-          py: 3,
-          bg: "surface",
-          borderBottom: "1px solid",
-          borderColor: "gray.700",
-        })}
-      >
-        <div className={css({ display: "flex", alignItems: "center", gap: 2 })}>
-          <MapPin className={css({ color: "primary" })} size={24} />
-          <h1
-            className={css({
-              fontSize: "xl",
-              fontWeight: "bold",
-              color: "text",
-            })}
-          >
-            EV Charging Logbook
-          </h1>
+      <header className="flex items-center justify-between px-4 py-3 bg-surface border-b border-border">
+        <div className="flex items-center gap-2">
+          <MapPin className="text-primary" size={24} />
+          <h1 className="text-xl font-bold">EV Charging Logbook</h1>
         </div>
 
-        <div className={css({ display: "flex", alignItems: "center", gap: 3 })}>
+        <div className="flex items-center gap-3">
           {user ? (
             <>
-              <span
-                className={css({
-                  fontSize: "sm",
-                  color: "muted",
-                  display: { base: "none", md: "block" },
-                })}
-              >
-                {user.email}
-              </span>
+              <span className="text-sm text-muted">{user.email}</span>
               <button
                 onClick={() => setIsModalOpen(true)}
-                className={css({
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  px: 3,
-                  py: 2,
-                  bg: "primary",
-                  color: "white",
-                  borderRadius: "md",
-                  fontSize: "sm",
-                  fontWeight: "medium",
-                  cursor: "pointer",
-                  _hover: { bg: "blue.600" },
-                  transition: "background 0.2s",
-                })}
+                className="flex items-center gap-1 px-3 py-2 bg-primary text-white rounded-md text-sm font-medium cursor-pointer border-none hover:bg-blue-600 transition-colors"
               >
                 <Plus size={16} />
                 New Log
               </button>
               <button
                 onClick={handleSignOut}
-                className={css({
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  px: 3,
-                  py: 2,
-                  bg: "transparent",
-                  color: "muted",
-                  borderRadius: "md",
-                  fontSize: "sm",
-                  cursor: "pointer",
-                  _hover: { color: "text", bg: "gray.700" },
-                  transition: "all 0.2s",
-                })}
+                className="flex items-center gap-1 px-3 py-2 bg-transparent text-muted rounded-md text-sm cursor-pointer border border-border hover:bg-gray-100 transition-colors"
               >
                 <LogOut size={16} />
                 Sign Out
@@ -188,21 +124,7 @@ export default function Home() {
           ) : (
             <button
               onClick={handleSignIn}
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: 1,
-                px: 3,
-                py: 2,
-                bg: "primary",
-                color: "white",
-                borderRadius: "md",
-                fontSize: "sm",
-                fontWeight: "medium",
-                cursor: "pointer",
-                _hover: { bg: "blue.600" },
-                transition: "background 0.2s",
-              })}
+              className="flex items-center gap-1 px-3 py-2 bg-primary text-white rounded-md text-sm font-medium cursor-pointer border-none hover:bg-blue-600 transition-colors"
             >
               <LogIn size={16} />
               Sign In
@@ -212,60 +134,20 @@ export default function Home() {
       </header>
 
       {/* Main Content */}
-      <div
-        className={css({
-          display: "flex",
-          flex: 1,
-          overflow: "hidden",
-        })}
-      >
+      <div className="flex flex-1 overflow-hidden">
         {/* Map */}
-        <div
-          className={css({
-            flex: 1,
-            position: "relative",
-          })}
-        >
+        <div className="flex-1 relative">
           {isLoading ? (
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                color: "muted",
-              })}
-            >
+            <div className="flex items-center justify-center h-full text-muted">
               Loading...
             </div>
           ) : !user ? (
-            <div
-              className={css({
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                gap: 4,
-                color: "muted",
-              })}
-            >
-              <MapPin size={48} className={css({ opacity: 0.5 })} />
-              <p className={css({ fontSize: "lg" })}>
-                Sign in to view your charging sessions
-              </p>
+            <div className="flex flex-col items-center justify-center h-full gap-4 text-muted">
+              <MapPin size={48} className="opacity-50" />
+              <p className="text-lg">Sign in to view your charging sessions</p>
               <button
                 onClick={handleSignIn}
-                className={css({
-                  px: 4,
-                  py: 2,
-                  bg: "primary",
-                  color: "white",
-                  borderRadius: "md",
-                  fontWeight: "medium",
-                  cursor: "pointer",
-                  _hover: { bg: "blue.600" },
-                })}
+                className="px-4 py-2 bg-primary text-white rounded-md font-medium cursor-pointer border-none hover:bg-blue-600 transition-colors"
               >
                 Sign In with Email
               </button>
