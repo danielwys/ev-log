@@ -1,0 +1,27 @@
+# EV Charging Logbook - Docker Compose for Unraid
+# This stack includes the full Supabase local development environment
+# Run `supabase start` first to initialize the stack
+
+version: "3.8"
+
+services:
+  # Next.js Production App
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ev-logbook
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:-http://your-unraid-ip:54321}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    networks:
+      - ev-logbook-network
+
+networks:
+  ev-logbook-network:
+    driver: bridge

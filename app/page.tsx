@@ -59,13 +59,22 @@ export default function Home() {
   }, [fetchSessions]);
 
   const handleSignIn = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
+    // For local development, use email OTP (simpler than OAuth setup)
+    const email = prompt("Enter your email for magic link sign-in:");
+    if (!email) return;
+    
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
       options: {
-        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+        emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
       },
     });
-    if (error) console.error("Sign in error:", error);
+    if (error) {
+      console.error("Sign in error:", error);
+      alert("Error: " + error.message);
+    } else {
+      alert("Check your email (or Mailpit at http://127.0.0.1:54324) for the magic link!");
+    }
   };
 
   const handleSignOut = async () => {
@@ -258,7 +267,7 @@ export default function Home() {
                   _hover: { bg: "blue.600" },
                 })}
               >
-                Sign In with Google
+                Sign In with Email
               </button>
             </div>
           ) : (
