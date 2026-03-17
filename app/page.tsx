@@ -1,65 +1,292 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState, useCallback, useRef } from "react";
+import { css } from "@/styled-system/css";
+import { MapComponent } from "@/components/Map";
+import { SidePanel } from "@/components/SidePanel";
+import { NewLogModal } from "@/components/NewLogModal";
+import { supabase, Session } from "@/lib/supabase";
+import { Plus, LogIn, LogOut, MapPin } from "lucide-react";
 
 export default function Home() {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const mapRef = useRef<{ flyTo: (lat: number, lng: number) => void } | null>(null);
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      setUser(data.user);
+      setIsLoading(false);
+    };
+    getUser();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const fetchSessions = useCallback(async () => {
+    if (!user) {
+      setSessions([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("sessions")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching sessions:", error);
+      return;
+    }
+
+    setSessions(data || []);
+  }, [user]);
+
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
+
+  const handleSignIn = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+      },
+    });
+    if (error) console.error("Sign in error:", error);
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setSelectedSession(null);
+  };
+
+  const handleSessionCreated = () => {
+    fetchSessions();
+    setIsModalOpen(false);
+  };
+
+  const handleMarkerClick = (session: Session) => {
+    setSelectedSession(session);
+  };
+
+  const handleLocateOnMap = (lat: number, lng: number) => {
+    mapRef.current?.flyTo(lat, lng);
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div
+      className={css({
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        bg: "background",
+        color: "text",
+      })}
+    >
+      {/* Header */}
+      <header
+        className={css({
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          px: 4,
+          py: 3,
+          bg: "surface",
+          borderBottom: "1px solid",
+          borderColor: "gray.700",
+        })}
+      >
+        <div className={css({ display: "flex", alignItems: "center", gap: 2 })}>
+          <MapPin className={css({ color: "primary" })} size={24} />
+          <h1
+            className={css({
+              fontSize: "xl",
+              fontWeight: "bold",
+              color: "text",
+            })}
+          >
+            EV Charging Logbook
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+        <div className={css({ display: "flex", alignItems: "center", gap: 3 })}>
+          {user ? (
+            <>
+              <span
+                className={css({
+                  fontSize: "sm",
+                  color: "muted",
+                  display: { base: "none", md: "block" },
+                })}
+              >
+                {user.email}
+              </span>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className={css({
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  px: 3,
+                  py: 2,
+                  bg: "primary",
+                  color: "white",
+                  borderRadius: "md",
+                  fontSize: "sm",
+                  fontWeight: "medium",
+                  cursor: "pointer",
+                  _hover: { bg: "blue.600" },
+                  transition: "background 0.2s",
+                })}
+              >
+                <Plus size={16} />
+                New Log
+              </button>
+              <button
+                onClick={handleSignOut}
+                className={css({
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  px: 3,
+                  py: 2,
+                  bg: "transparent",
+                  color: "muted",
+                  borderRadius: "md",
+                  fontSize: "sm",
+                  cursor: "pointer",
+                  _hover: { color: "text", bg: "gray.700" },
+                  transition: "all 0.2s",
+                })}
+              >
+                <LogOut size={16} />
+                Sign Out
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleSignIn}
+              className={css({
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                px: 3,
+                py: 2,
+                bg: "primary",
+                color: "white",
+                borderRadius: "md",
+                fontSize: "sm",
+                fontWeight: "medium",
+                cursor: "pointer",
+                _hover: { bg: "blue.600" },
+                transition: "background 0.2s",
+              })}
+            >
+              <LogIn size={16} />
+              Sign In
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <div
+        className={css({
+          display: "flex",
+          flex: 1,
+          overflow: "hidden",
+        })}
+      >
+        {/* Map */}
+        <div
+          className={css({
+            flex: 1,
+            position: "relative",
+          })}
+        >
+          {isLoading ? (
+            <div
+              className={css({
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                color: "muted",
+              })}
+            >
+              Loading...
+            </div>
+          ) : !user ? (
+            <div
+              className={css({
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                gap: 4,
+                color: "muted",
+              })}
+            >
+              <MapPin size={48} className={css({ opacity: 0.5 })} />
+              <p className={css({ fontSize: "lg" })}>
+                Sign in to view your charging sessions
+              </p>
+              <button
+                onClick={handleSignIn}
+                className={css({
+                  px: 4,
+                  py: 2,
+                  bg: "primary",
+                  color: "white",
+                  borderRadius: "md",
+                  fontWeight: "medium",
+                  cursor: "pointer",
+                  _hover: { bg: "blue.600" },
+                })}
+              >
+                Sign In with Google
+              </button>
+            </div>
+          ) : (
+            <MapComponent
+              ref={mapRef}
+              sessions={sessions}
+              onMarkerClick={handleMarkerClick}
+              selectedSession={selectedSession}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          )}
         </div>
-      </main>
+
+        {/* Side Panel */}
+        {selectedSession && (
+          <SidePanel
+            session={selectedSession}
+            onClose={() => setSelectedSession(null)}
+            onLocate={handleLocateOnMap}
+          />
+        )}
+      </div>
+
+      {/* New Log Modal */}
+      <NewLogModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={handleSessionCreated}
+      />
     </div>
   );
 }
