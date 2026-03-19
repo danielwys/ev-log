@@ -47,12 +47,19 @@ export const sessionSchema = z.object({
     z.number().int().min(0, "Must be at least 0").default(0)
   ),
   error_code: z.string().optional(),
-  failure_type: z.enum(failureTypes).optional(),
+  failure_type: z.preprocess(
+    (val) => (val === "" || val === null ? undefined : val),
+    z.enum(failureTypes).optional()
+  ),
   technique_required: z.boolean().default(false),
   technique_notes: z.string().optional(),
   price_per_kwh: z.preprocess(
     (val) => val === "" || val === undefined ? undefined : (typeof val === "string" ? parseFloat(val) : val),
     z.number().min(0).max(10).optional()
+  ),
+  kwh_delivered: z.preprocess(
+    (val) => val === "" || val === undefined ? undefined : (typeof val === "string" ? parseFloat(val) : val),
+    z.number().min(0).max(1000).optional()
   ),
 });
 

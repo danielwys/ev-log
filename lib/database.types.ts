@@ -42,6 +42,7 @@ export type Database = {
           technique_notes: string | null;
           price_per_kwh: number | null;
           pin_color: PinColor;
+          kwh_delivered: number | null;
         };
         Insert: {
           id?: string;
@@ -72,6 +73,7 @@ export type Database = {
           technique_notes?: string | null;
           price_per_kwh?: number | null;
           pin_color?: PinColor;
+          kwh_delivered?: number | null;
         };
         Update: {
           id?: string;
@@ -102,6 +104,39 @@ export type Database = {
           technique_notes?: string | null;
           price_per_kwh?: number | null;
           pin_color?: PinColor;
+          kwh_delivered?: number | null;
+        };
+      };
+      vehicle_config: {
+        Row: {
+          id: string;
+          user_id: string;
+          vehicle_name: string;
+          battery_capacity_kwh: number;
+          max_charging_kw: number | null;
+          platform_voltage: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          vehicle_name: string;
+          battery_capacity_kwh: number;
+          max_charging_kw?: number | null;
+          platform_voltage?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          vehicle_name?: string;
+          battery_capacity_kwh?: number;
+          max_charging_kw?: number | null;
+          platform_voltage?: number | null;
+          created_at?: string;
+          updated_at?: string;
         };
       };
     };
@@ -143,6 +178,7 @@ export type Database = {
           technique_notes: string | null;
           price_per_kwh: number | null;
           pin_color: PinColor;
+          kwh_delivered: number | null;
           distance_meters: number;
         }[];
       };

@@ -1,13 +1,10 @@
 "use client";
 
-import { css } from "@/styled-system/css";
 import { Session } from "@/lib/supabase";
-import { parseWktPoint } from "@/lib/validation";
-import { 
-  X, Zap, Battery, Calendar, MapPin, Navigation, Pencil, 
-  Cable, Plug, AlertTriangle, Wallet, Cpu, Hash, Lightbulb
-} from "lucide-react";
-import Image from "next/image";
+import { X, MapPin, Edit2, Zap, Cable, Plug, Battery, DollarSign, Calendar, AlertTriangle, CheckCircle, BatteryCharging } from "lucide-react";
+
+// Default battery capacity for GAC Aion V Luxury
+const BATTERY_CAPACITY_KWH = 75.3;
 
 interface SidePanelProps {
   session: Session;
@@ -18,1000 +15,386 @@ interface SidePanelProps {
 }
 
 export function SidePanel({ session, onClose, onLocate, onEdit, currentUserId }: SidePanelProps) {
-  const { lat, lng } = parseWktPoint(session.location);
-  const batteryAdded = session.battery_end - session.battery_start;
   const canEdit = currentUserId && session.user_id === currentUserId;
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString("en-US", {
+  const handleLocate = () => {
+    // Parse WKT point to get lat/lng
+    try {
+      const match = session.location.match(/POINT\(([^ ]+) ([^)]+)\)/);
+      if (match) {
+        const lng = parseFloat(match[1]);
+        const lat = parseFloat(match[2]);
+        onLocate(lat, lng);
+      }
+    } catch (e) {
+      console.error("Failed to parse location:", e);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-SG", {
+      weekday: "short",
       year: "numeric",
-      month: "long",
+      month: "short",
       day: "numeric",
     });
   };
 
-  const formatTime = (dateStr: string) => {
-    return new Date(dateStr).toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const getSuccessRate = () => {
+    if (!session.attempts || session.attempts === 0) return null;
+    return Math.round((session.successes / session.attempts) * 100);
   };
 
+  const successRate = getSuccessRate();
+
   return (
-    <div
-      className={css({
-        width: "420px",
-        maxWidth: "100%",
-        bg: "gray.50",
-        borderLeft: "1px solid",
-        borderColor: "gray.200",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        animation: "slideIn 0.3s ease-out",
-        boxShadow: "-4px 0 20px rgba(0,0,0,0.1)",
-      })}
-    >
-      {/* Header Card */}
-      <div
-        className={css({
-          bg: "white",
-          px: 5,
-          py: 4,
-          borderBottom: "1px solid",
-          borderColor: "gray.200",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-        })}
-      >
-        <div
-          className={css({
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: 3,
-          })}
-        >
-          <div className={css({ flex: 1, minWidth: 0 })}>
-            <h2
-              className={css({
-                fontSize: "xl",
-                fontWeight: "bold",
-                color: "gray.900",
-                lineHeight: "1.3",
-                mb: 1,
-              })}
-            >
-              {session.station_name}
-            </h2>
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                color: "gray.500",
-                fontSize: "sm",
-              })}
-            >
-              <Zap size={14} />
-              <span>{session.operator}</span>
-            </div>
-          </div>
-          <div className={css({ display: "flex", gap: 1 })}>
-            {canEdit && onEdit && (
-              <button
-                onClick={() => onEdit(session)}
-                className={css({
-                  p: 2,
-                  borderRadius: "lg",
-                  color: "gray.500",
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                  _hover: { color: "blue.600", bg: "blue.50" },
-                })}
-                title="Edit session"
-              >
-                <Pencil size={18} />
-              </button>
-            )}
+    <div className="w-full max-w-md bg-white border-l border-gray-200 flex flex-col h-full shadow-xl">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
+        <div className="flex items-center gap-2">
+          <div
+            className={`w-3 h-3 rounded-full ${
+              session.pin_color === "green"
+                ? "bg-green-500"
+                : session.pin_color === "red"
+                ? "bg-red-500"
+                : "bg-yellow-500"
+            }`}
+          />
+          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+            Session Details
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {canEdit && onEdit && (
             <button
-              onClick={() => onLocate(lat, lng)}
-              className={css({
-                p: 2,
-                borderRadius: "lg",
-                color: "gray.500",
-                cursor: "pointer",
-                transition: "all 0.2s",
-                _hover: { color: "blue.600", bg: "blue.50" },
-              })}
-              title="Locate on map"
+              onClick={() => onEdit(session)}
+              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Edit session"
             >
-              <Navigation size={18} />
+              <Edit2 size={18} />
             </button>
-            <button
-              onClick={onClose}
-              className={css({
-                p: 2,
-                borderRadius: "lg",
-                color: "gray.500",
-                cursor: "pointer",
-                transition: "all 0.2s",
-                _hover: { color: "gray.700", bg: "gray.100" },
-              })}
-            >
-              <X size={18} />
-            </button>
-          </div>
+          )}
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X size={20} />
+          </button>
         </div>
       </div>
 
       {/* Content */}
-      <div
-        className={css({
-          flex: 1,
-          overflowY: "auto",
-          px: 5,
-          py: 5,
-        })}
-      >
-        {/* Photos Gallery */}
-        {session.photos && session.photos.length > 0 && (
-          <div className={css({ mb: 6 })}>
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                mb: 3,
-              })}
-            >
-              <div
-                className={css({
-                  w: 8,
-                  h: 8,
-                  borderRadius: "lg",
-                  bg: "purple.100",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                })}
-              >
-                <span className={css({ fontSize: "md" })}>📷</span>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Station Name */}
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">{session.station_name}</h2>
+          {session.operator && (
+            <p className="text-sm text-gray-500 mt-1">{session.operator}</p>
+          )}
+        </div>
+
+        {/* Locate Button */}
+        <button
+          onClick={handleLocate}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors"
+        >
+          <MapPin size={16} />
+          Center on Map
+        </button>
+
+        {/* Charging Summary */}
+        <div className="bg-gray-50 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Zap className="w-4 h-4 text-yellow-600" />
+            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+              Charging Summary
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="text-center p-3 bg-white rounded-lg">
+              <div className="text-2xl font-bold text-gray-900">
+                {session.battery_start}%
               </div>
-              <h3
-                className={css({
-                  fontSize: "sm",
-                  fontWeight: "semibold",
-                  color: "gray.700",
-                  textTransform: "uppercase",
-                  letterSpacing: "wide",
-                })}
-              >
-                Photos
-              </h3>
+              <div className="text-xs text-gray-500 mt-1">Start</div>
             </div>
-            <div
-              className={css({
-                display: "grid",
-                gridTemplateColumns: session.photos.length === 1 ? "1fr" : "repeat(2, 1fr)",
-                gap: 2,
-              })}
-            >
-              {session.photos.map((photo, index) => (
-                <div
-                  key={index}
-                  className={css({
-                    position: "relative",
-                    aspectRatio: "4/3",
-                    borderRadius: "xl",
-                    overflow: "hidden",
-                    bg: "gray.200",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                  })}
-                >
-                  <Image
-                    src={photo}
-                    alt={`Charging session photo ${index + 1}`}
-                    fill
-                    className={css({ objectFit: "cover" })}
-                  />
+            <div className="text-center p-3 bg-white rounded-lg">
+              <div className="text-2xl font-bold text-green-600">
+                {session.battery_end}%
+              </div>
+              <div className="text-xs text-gray-500 mt-1">End</div>
+            </div>
+          </div>
+
+          {session.max_kw && (
+            <div className="mb-3 flex items-center justify-between p-3 bg-white rounded-lg">
+              <span className="text-sm text-gray-600">Peak Power</span>
+              <span className="text-lg font-semibold text-gray-900">
+                {session.max_kw} kW
+              </span>
+            </div>
+          )}
+
+          {/* Energy & Efficiency */}
+          <EnergyEfficiencyDisplay session={session} />
+        </div>
+
+        {/* Technical Details */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Cable className="w-4 h-4 text-gray-500" />
+            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+              Technical Details
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {session.charger_hardware_model && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="text-xs text-gray-500 mb-1">Hardware</div>
+                <div className="text-sm font-medium text-gray-900">
+                  {session.charger_hardware_model}
                 </div>
+              </div>
+            )}
+
+            {session.charger_software && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="text-xs text-gray-500 mb-1">Software</div>
+                <div className="text-sm font-medium text-gray-900">
+                  {session.charger_software}
+                </div>
+              </div>
+            )}
+
+            {session.cable_amp_limit && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="text-xs text-gray-500 mb-1">Cable Amp Limit</div>
+                <div className="text-sm font-medium text-gray-900">
+                  {session.cable_amp_limit}A
+                </div>
+              </div>
+            )}
+
+            {session.stall_id && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="text-xs text-gray-500 mb-1">Stall / Plug</div>
+                <div className="text-sm font-medium text-gray-900">
+                  {session.stall_id}
+                  {session.plug_id && ` / ${session.plug_id}`}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Success Rate */}
+          {successRate !== null && (
+            <div className={`p-3 rounded-lg flex items-center justify-between ${
+              successRate >= 75
+                ? "bg-green-50"
+                : successRate >= 25
+                ? "bg-yellow-50"
+                : "bg-red-50"
+            }`}>
+              <div className="flex items-center gap-2">
+                {successRate >= 75 ? (
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-yellow-600" />
+                )}
+                <span className="text-sm font-medium text-gray-700">
+                  Success Rate
+                </span>
+              </div>
+              <span className={`text-lg font-bold ${
+                successRate >= 75
+                  ? "text-green-700"
+                  : successRate >= 25
+                  ? "text-yellow-700"
+                  : "text-red-700"
+              }`}>
+                {session.successes}/{session.attempts} ({successRate}%)
+              </span>
+            </div>
+          )}
+
+          {/* Error Code */}
+          {session.error_code && (
+            <div className="p-3 bg-red-50 rounded-lg border border-red-100">
+              <div className="text-xs text-red-600 mb-1">Error Code</div>
+              <div className="text-sm font-mono font-medium text-red-800">
+                {session.error_code}
+              </div>
+            </div>
+          )}
+
+          {/* Technique Required */}
+          {session.technique_required && (
+            <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-100">
+              <div className="text-xs text-yellow-700 mb-1 font-medium">
+                Technique Required
+              </div>
+              {session.technique_notes && (
+                <div className="text-sm text-yellow-800">
+                  {session.technique_notes}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Pricing */}
+        {session.price_per_kwh && (
+          <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
+            <DollarSign className="w-4 h-4 text-green-600" />
+            <div>
+              <div className="text-xs text-green-600">Price</div>
+              <div className="text-sm font-semibold text-green-800">
+                SGD {session.price_per_kwh}/kWh
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Photos */}
+        {session.photos && session.photos.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-gray-700">
+              Photos ({session.photos.length})
+            </h3>
+            <div className="grid grid-cols-2 gap-2">
+              {session.photos.map((photo, idx) => (
+                <img
+                  key={idx}
+                  src={photo}
+                  alt={`Session photo ${idx + 1}`}
+                  className="w-full h-24 object-cover rounded-lg"
+                />
               ))}
             </div>
           </div>
         )}
 
-        {/* Charging Summary Card */}
-        <div
-          className={css({
-            bg: "white",
-            borderRadius: "xl",
-            p: 4,
-            mb: 4,
-            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-            border: "1px solid",
-            borderColor: "gray.100",
-          })}
-        >
-          <div
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              gap: 2,
-              mb: 4,
-            })}
-          >
-            <div
-              className={css({
-                w: 8,
-                h: 8,
-                borderRadius: "lg",
-                bg: "green.100",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              })}
-            >
-              <Battery size={16} className={css({ color: "green.600" })} />
-            </div>
-            <h3
-              className={css({
-                fontSize: "sm",
-                fontWeight: "semibold",
-                color: "gray.700",
-                textTransform: "uppercase",
-                letterSpacing: "wide",
-              })            >
-              Charging Summary
-            </h3>
-          </div>
-
-          <div
-            className={css({
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: 3,
-            })}
-          >
-            <div
-              className={css({
-                textAlign: "center",
-                p: 3,
-                bg: "red.50",
-                borderRadius: "lg",
-              })}
-            >
-              <p className={css({ fontSize: "xs", color: "red.600", mb: 1 })}>
-                Start
-              </p>
-              <p className={css({ fontSize: "2xl", fontWeight: "bold", color: "red.700" })}>
-                {session.battery_start}%
-              </p>
-            </div>
-            <div
-              className={css({
-                textAlign: "center",
-                p: 3,
-                bg: "blue.50",
-                borderRadius: "lg",
-              })}
-            >
-              <p className={css({ fontSize: "xs", color: "blue.600", mb: 1 })}>
-                End
-              </p>
-              <p className={css({ fontSize: "2xl", fontWeight: "bold", color: "blue.700" })}>
-                {session.battery_end}%
-              </p>
-            </div>
-            <div
-              className={css({
-                textAlign: "center",
-                p: 3,
-                bg: batteryAdded > 0 ? "green.50" : "orange.50",
-                borderRadius: "lg",
-              })}
-            >
-              <p
-                className={css({
-                  fontSize: "xs",
-                  color: batteryAdded > 0 ? "green.600" : "orange.600",
-                  mb: 1,
-                })}
-              >
-                Added
-              </p>
-              <p
-                className={css({
-                  fontSize: "2xl",
-                  fontWeight: "bold",
-                  color: batteryAdded > 0 ? "green.700" : "orange.700",
-                })}
-              >
-                {batteryAdded > 0 ? "+" : ""}
-                {batteryAdded}%
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Performance Card */}
-        <div
-          className={css({
-            bg: "white",
-            borderRadius: "xl",
-            p: 4,
-            mb: 4,
-            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-            border: "1px solid",
-            borderColor: "gray.100",
-          })}
-        >
-          <div
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              gap: 2,
-              mb: 4,
-            })}
-          >
-            <div
-              className={css({
-                w: 8,
-                h: 8,
-                borderRadius: "lg",
-                bg: "yellow.100",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              })}
-            >
-              <Zap size={16} className={css({ color: "yellow.700" })} />
-            </div>
-            <h3
-              className={css({
-                fontSize: "sm",
-                fontWeight: "semibold",
-                color: "gray.700",
-                textTransform: "uppercase",
-                letterSpacing: "wide",
-              })}
-            >
-              Performance
-            </h3>
-          </div>
-
-          <div className={css({ spaceY: 3 })}>
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                p: 3,
-                bg: "gray.50",
-                borderRadius: "lg",
-              })}
-            >
-              <div className={css({ display: "flex", alignItems: "center", gap: 3 })}>
-                <div
-                  className={css({
-                    w: 10,
-                    h: 10,
-                    borderRadius: "lg",
-                    bg: "yellow.500",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  })}
-                >
-                  <Zap size={20} className={css({ color: "white" })} />
-                </div>
-                <div>
-                  <p className={css({ fontSize: "xs", color: "gray.500" })}>
-                    Max Power
-                  </p>
-                  <p className={css({ fontSize: "lg", fontWeight: "bold", color: "gray.900" })}>
-                    {session.max_kw.toFixed(1)} kW
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {session.price_per_kwh && (
-              <div
-                className={css({
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  p: 3,
-                  bg: "gray.50",
-                  borderRadius: "lg",
-                })}
-              >
-                <div className={css({ display: "flex", alignItems: "center", gap: 3 })}>
-                  <div
-                    className={css({
-                      w: 10,
-                      h: 10,
-                      borderRadius: "lg",
-                      bg: "emerald.500",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    })}
-                  >
-                    <Wallet size={20} className={css({ color: "white" })} />
-                  </div>
-                  <div>
-                    <p className={css({ fontSize: "xs", color: "gray.500" })}>
-                      Price per kWh
-                    </p>
-                    <p className={css({ fontSize: "lg", fontWeight: "bold", color: "gray.900" })}>
-                      ${session.price_per_kwh.toFixed(4)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Technical Specs Card */}
-        {(session.charger_hardware_model || session.charger_software || session.cable_amp_limit) && (
-          <div
-            className={css({
-              bg: "white",
-              borderRadius: "xl",
-              p: 4,
-              mb: 4,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-              border: "1px solid",
-              borderColor: "gray.100",
-            })}
-          >
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                mb: 4,
-              })}
-            >
-              <div
-                className={css({
-                  w: 8,
-                  h: 8,
-                  borderRadius: "lg",
-                  bg: "blue.100",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                })}
-              >
-                <Cpu size={16} className={css({ color: "blue.600" })} />
-              </div>
-              <h3
-                className={css({
-                  fontSize: "sm",
-                  fontWeight: "semibold",
-                  color: "gray.700",
-                  textTransform: "uppercase",
-                  letterSpacing: "wide",
-                })}
-              >
-                Technical Specs
-              </h3>
-            </div>
-
-            <div className={css({ spaceY: 3 })}>
-              {session.charger_hardware_model && (
-                <div
-                  className={css({
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 3,
-                    p: 3,
-                    bg: "gray.50",
-                    borderRadius: "lg",
-                  })}
-                >
-                  <Cable size={18} className={css({ color: "gray.400" })} />
-                  <div>
-                    <p className={css({ fontSize: "xs", color: "gray.500" })}>
-                      Hardware Model
-                    </p>
-                    <p className={css({ fontSize: "sm", fontWeight: "medium", color: "gray.900" })}>
-                      {session.charger_hardware_model}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {session.charger_software && (
-                <div
-                  className={css({
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 3,
-                    p: 3,
-                    bg: "gray.50",
-                    borderRadius: "lg",
-                  })}
-                >
-                  <Cpu size={18} className={css({ color: "gray.400" })} />
-                  <div>
-                    <p className={css({ fontSize: "xs", color: "gray.500" })}>
-                      Software
-                    </p>
-                    <p className={css({ fontSize: "sm", fontWeight: "medium", color: "gray.900" })}>
-                      {session.charger_software}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {session.cable_amp_limit && (
-                <div
-                  className={css({
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 3,
-                    p: 3,
-                    bg: "gray.50",
-                    borderRadius: "lg",
-                  })}
-                >
-                  <Zap size={18} className={css({ color: "gray.400" })} />
-                  <div>
-                    <p className={css({ fontSize: "xs", color: "gray.500" })}>
-                      Cable Amp Limit
-                    </p>
-                    <p className={css({ fontSize: "sm", fontWeight: "medium", color: "gray.900" })}>
-                      {session.cable_amp_limit}A
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Connector Info Card */}
-        {(session.connectors_tried && session.connectors_tried.length > 0) && (
-          <div
-            className={css({
-              bg: "white",
-              borderRadius: "xl",
-              p: 4,
-              mb: 4,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-              border: "1px solid",
-              borderColor: "gray.100",
-            })}
-          >
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                mb: 4,
-              })}
-            >
-              <div
-                className={css({
-                  w: 8,
-                  h: 8,
-                  borderRadius: "lg",
-                  bg: "violet.100",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                })}
-              >
-                <Plug size={16} className={css({ color: "violet.600" })} />
-              </div>
-              <h3
-                className={css({
-                  fontSize: "sm",
-                  fontWeight: "semibold",
-                  color: "gray.700",
-                  textTransform: "uppercase",
-                  letterSpacing: "wide",
-                })}
-              >
-                Connectors
-              </h3>
-            </div>
-
-            <div className={css({ spaceY: 3 })}>
-              <div>
-                <p className={css({ fontSize: "xs", color: "gray.500", mb: 2 })}>
-                  Attempted ({session.connectors_tried.length})
-                </p>
-                <div className={css({ display: "flex", flexWrap: "wrap", gap: 2 })}>
-                  {session.connectors_tried.map((connector) => (
-                    <span
-                      key={connector}
-                      className={css({
-                        px: 3,
-                        py: 1,
-                        bg: session.successful_connectors?.includes(connector) ? "green.100" : "gray.200",
-                        color: session.successful_connectors?.includes(connector) ? "green.700" : "gray.600",
-                        borderRadius: "full",
-                        fontSize: "sm",
-                        fontWeight: "medium",
-                      })}
-                    >
-                      {session.successful_connectors?.includes(connector) && "✓ "}
-                      {connector}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {(session.attempts !== undefined && session.attempts > 0) && (
-                <div
-                  className={css({
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    p: 3,
-                    bg: "gray.50",
-                    borderRadius: "lg",
-                    mt: 3,
-                  })}
-                >
-                  <span className={css({ fontSize: "sm", color: "gray.600" })}>
-                    Success Rate
-                  </span>
-                  <span
-                    className={css({
-                      fontSize: "sm",
-                      fontWeight: "bold",
-                      color: session.successes && session.successes >= session.attempts ? "green.600" : "orange.600",
-                    })}
-                  >
-                    {session.successes || 0} / {session.attempts}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Error Details Card */}
-        {(session.error_code || session.failure_type) && (
-          <div
-            className={css({
-              bg: "white",
-              borderRadius: "xl",
-              p: 4,
-              mb: 4,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-              border: "1px solid",
-              borderColor: "red.200",
-            })}
-          >
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                mb: 4,
-              })}
-            >
-              <div
-                className={css({
-                  w: 8,
-                  h: 8,
-                  borderRadius: "lg",
-                  bg: "red.100",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                })}
-              >
-                <AlertTriangle size={16} className={css({ color: "red.600" })} />
-              </div>
-              <h3
-                className={css({
-                  fontSize: "sm",
-                  fontWeight: "semibold",
-                  color: "red.700",
-                  textTransform: "uppercase",
-                  letterSpacing: "wide",
-                })}
-              >
-                Error Details
-              </h3>
-            </div>
-
-            <div className={css({ spaceY: 3 })}>
-              {session.error_code && (
-                <div
-                  className={css({
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 3,
-                    p: 3,
-                    bg: "red.50",
-                    borderRadius: "lg",
-                  })}
-                >
-                  <Hash size={18} className={css({ color: "red.500" })} />
-                  <div>
-                    <p className={css({ fontSize: "xs", color: "red.500" })}>
-                      Error Code
-                    </p>
-                    <p className={css({ fontSize: "sm", fontWeight: "medium", color: "red.700" })}>
-                      {session.error_code}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {session.failure_type && (
-                <div
-                  className={css({
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 3,
-                    p: 3,
-                    bg: "red.50",
-                    borderRadius: "lg",
-                  })}
-                >
-                  <AlertTriangle size={18} className={css({ color: "red.500" })} />
-                  <div>
-                    <p className={css({ fontSize: "xs", color: "red.500" })}>
-                      Failure Type
-                    </p>
-                    <p className={css({ fontSize: "sm", fontWeight: "medium", color: "red.700" })}>
-                      {session.failure_type}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Technique Required Card */}
-        {session.technique_required && (
-          <div
-            className={css({
-              bg: "white",
-              borderRadius: "xl",
-              p: 4,
-              mb: 4,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-              border: "1px solid",
-              borderColor: "amber.200",
-            })}
-          >
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                mb: 4,
-              })}
-            >
-              <div
-                className={css({
-                  w: 8,
-                  h: 8,
-                  borderRadius: "lg",
-                  bg: "amber.100",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                })}
-              >
-                <Lightbulb size={16} className={css({ color: "amber.600" })} />
-              </div>
-              <h3
-                className={css({
-                  fontSize: "sm",
-                  fontWeight: "semibold",
-                  color: "amber.700",
-                  textTransform: "uppercase",
-                  letterSpacing: "wide",
-                })}
-              >
-                Technique Required
-              </h3>
-            </div>
-
-            {session.technique_notes && (
-              <div
-                className={css({
-                  p: 3,
-                  bg: "amber.50",
-                  borderRadius: "lg",
-                })}
-              >
-                <p className={css({ fontSize: "sm", color: "amber.800" })}>
-                  {session.technique_notes}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Location Card */}
-        <div
-          className={css({
-            bg: "white",
-            borderRadius: "xl",
-            p: 4,
-            mb: 4,
-            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-            border: "1px solid",
-            borderColor: "gray.100",
-          })}
-        >
-          <div
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              gap: 2,
-              mb: 4,
-            })}
-          >
-            <div
-              className={css({
-                w: 8,
-                h: 8,
-                borderRadius: "lg",
-                bg: "cyan.100",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              })}
-            >
-              <MapPin size={16} className={css({ color: "cyan.600" })} />
-            </div>
-            <h3
-              className={css({
-                fontSize: "sm",
-                fontWeight: "semibold",
-                color: "gray.700",
-                textTransform: "uppercase",
-                letterSpacing: "wide",
-              })}
-            >
-              Location & Time
-            </h3>
-          </div>
-
-          <div className={css({ spaceY: 3 })}>
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: 3,
-                p: 3,
-                bg: "gray.50",
-                borderRadius: "lg",
-              })}
-            >
-              <Calendar size={18} className={css({ color: "gray.400" })} />
-              <div>
-                <p className={css({ fontSize: "xs", color: "gray.500" })}>
-                  Date & Time
-                </p>
-                <p className={css({ fontSize: "sm", fontWeight: "medium", color: "gray.900" })}>
-                  {formatDate(session.created_at)} at {formatTime(session.created_at)}
-                </p>
-              </div>
-            </div>
-
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: 3,
-                p: 3,
-                bg: "gray.50",
-                borderRadius: "lg",
-              })}
-            >
-              <MapPin size={18} className={css({ color: "gray.400" })} />
-              <div>
-                <p className={css({ fontSize: "xs", color: "gray.500" })}>
-                  Coordinates
-                </p>
-                <p className={css({ fontSize: "sm", fontWeight: "medium", color: "gray.900" })}>
-                  {lat.toFixed(6)}, {lng.toFixed(6)}
-                </p>
-              </div>
-            </div>
-
-            {(session.stall_id || session.plug_id) && (
-              <div
-                className={css({
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 3,
-                  p: 3,
-                  bg: "gray.50",
-                  borderRadius: "lg",
-                })}
-              >
-                <Hash size={18} className={css({ color: "gray.400" })} />
-                <div>
-                  <p className={css({ fontSize: "xs", color: "gray.500" })}>
-                    Stall / Plug
-                  </p>
-                  <p className={css({ fontSize: "sm", fontWeight: "medium", color: "gray.900" })}>
-                    {session.stall_id || "N/A"} / {session.plug_id || "N/A"}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Notes Card */}
+        {/* Notes */}
         {session.notes && (
-          <div
-            className={css({
-              bg: "white",
-              borderRadius: "xl",
-              p: 4,
-              mb: 4,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-              border: "1px solid",
-              borderColor: "gray.100",
-            })}
-          >
-            <div
-              className={css({
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                mb: 4,
-              })}
-            >
-              <div
-                className={css({
-                  w: 8,
-                  h: 8,
-                  borderRadius: "lg",
-                  bg: "gray.100",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                })}
-              >
-                <span className={css({ fontSize: "md" })}>📝</span>
-              </div>
-              <h3
-                className={css({
-                  fontSize: "sm",
-                  fontWeight: "semibold",
-                  color: "gray.700",
-                  textTransform: "uppercase",
-                  letterSpacing: "wide",
-                })}
-              >
-                Notes
-              </h3>
-            </div>
-
-            <div
-              className={css({
-                p: 3,
-                bg: "gray.50",
-                borderRadius: "lg",
-              })}
-            >
-              <p className={css({ fontSize: "sm", color: "gray.700", lineHeight: "relaxed" })}>
-                {session.notes}
-              </p>
+          <div className="p-3 bg-gray-50 rounded-lg">
+            <div className="text-xs text-gray-500 mb-1">Notes</div>
+            <div className="text-sm text-gray-700 whitespace-pre-wrap">
+              {session.notes}
             </div>
           </div>
         )}
+
+        {/* Date */}
+        <div className="flex items-center gap-2 text-sm text-gray-500 pt-2 border-t border-gray-100">
+          <Calendar className="w-4 h-4" />
+          {formatDate(session.created_at)}
+        </div>
       </div>
+    </div>
+  );
+}
+
+// Energy & Efficiency Display Component
+interface EnergyEfficiencyDisplayProps {
+  session: Session;
+}
+
+function EnergyEfficiencyDisplay({ session }: EnergyEfficiencyDisplayProps) {
+  // Calculate kWh stored based on battery percentage change
+  const socChange = session.battery_end - session.battery_start;
+  const kwhStored = (socChange / 100) * BATTERY_CAPACITY_KWH;
+  
+  // Get kWh delivered from session
+  const kwhDelivered = session.kwh_delivered;
+  
+  // Calculate efficiency if kWh delivered is available
+  const efficiency = kwhDelivered && kwhDelivered > 0
+    ? (kwhStored / kwhDelivered) * 100
+    : null;
+
+  // Determine efficiency color
+  const getEfficiencyColor = (eff: number): string => {
+    if (eff > 85) return "text-green-600";
+    if (eff >= 75) return "text-yellow-600";
+    return "text-red-600";
+  };
+
+  const getEfficiencyBg = (eff: number): string => {
+    if (eff > 85) return "bg-green-100 border-green-200";
+    if (eff >= 75) return "bg-yellow-100 border-yellow-200";
+    return "bg-red-100 border-red-200";
+  };
+
+  // If no kWh delivered data, show simplified view
+  if (!kwhDelivered) {
+    return (
+      <div className="p-3 bg-white rounded-lg">
+        <div className="flex items-center gap-2 mb-2">
+          <BatteryCharging className="w-4 h-4 text-gray-400" />
+          <span className="text-sm font-medium text-gray-600">Energy</span>
+        </div>
+        <div className="text-sm text-gray-500">
+          Energy stored: <span className="font-semibold text-gray-900">{kwhStored.toFixed(2)} kWh</span>
+          <span className="text-xs text-gray-400 ml-1">(calculated)</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Energy Delivered */}
+      <div className="p-3 bg-white rounded-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BatteryCharging className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-medium text-gray-600">Energy Delivered</span>
+          </div>
+          <span className="text-lg font-semibold text-gray-900">
+            {kwhDelivered.toFixed(3)} kWh
+          </span>
+        </div>
+      </div>
+
+      {/* Energy Stored (Calculated) */}
+      <div className="p-3 bg-white rounded-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Battery className="w-4 h-4 text-green-600" />
+            <span className="text-sm font-medium text-gray-600">Energy Stored</span>
+          </div>
+          <span className="text-lg font-semibold text-gray-900">
+            {kwhStored.toFixed(2)} kWh
+          </span>
+        </div>
+        <div className="text-xs text-gray-400 mt-1">
+          {socChange.toFixed(1)}% × {BATTERY_CAPACITY_KWH} kWh capacity
+        </div>
+      </div>
+
+      {/* Efficiency */}
+      {efficiency && (
+        <div className={`p-3 rounded-lg border ${getEfficiencyBg(efficiency)}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Zap className={`w-4 h-4 ${getEfficiencyColor(efficiency)}`} />
+              <span className="text-sm font-medium text-gray-700">Efficiency</span>
+            </div>
+            <span className={`text-xl font-bold ${getEfficiencyColor(efficiency)}`}>
+              {efficiency.toFixed(1)}%
+            </span>
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            {efficiency > 85 
+              ? "Excellent charging efficiency" 
+              : efficiency >= 75 
+                ? "Good charging efficiency" 
+                : "Poor efficiency - check for issues"}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

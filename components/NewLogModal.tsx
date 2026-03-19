@@ -6,8 +6,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { sessionSchema, SessionFormData, wktPoint, extractPlugShareId, PlugShareData, parseWktPoint } from "@/lib/validation";
 import { supabase, Session } from "@/lib/supabase";
 import { 
-  X, Upload, MapPin, Loader2, Link2, AlertTriangle, Zap, Cable, Plug
+  X, Upload, MapPin, Loader2, Link2, AlertTriangle, Zap, Cable, Plug, BatteryCharging
 } from "lucide-react";
+
+// Default battery capacity for GAC Aion V Luxury (can be fetched from vehicle_config later)
+const DEFAULT_BATTERY_CAPACITY = 75.3;
 
 interface NewLogModalProps {
   isOpen: boolean;
@@ -82,6 +85,7 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
       setValue("stall_id", editSession.stall_id || "");
       setValue("plug_id", editSession.plug_id || "");
       setValue("price_per_kwh", editSession.price_per_kwh || undefined);
+      setValue("kwh_delivered", editSession.kwh_delivered || undefined);
 
       // Connector tracking
       setValue("connectors_tried", editSession.connectors_tried || []);
@@ -254,6 +258,7 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
             technique_required: data.technique_required || false,
             technique_notes: data.technique_notes || null,
             price_per_kwh: data.price_per_kwh || null,
+            kwh_delivered: data.kwh_delivered || null,
           }),
         });
 
@@ -287,6 +292,7 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
           technique_required: data.technique_required || false,
           technique_notes: data.technique_notes || null,
           price_per_kwh: data.price_per_kwh || null,
+          kwh_delivered: data.kwh_delivered || null,
         } as any);
 
         if (error) throw error;
@@ -317,7 +323,7 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
 
   return (
     <div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4"
       onClick={handleClose}
     >
       <div
@@ -468,39 +474,76 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
               </div>
             </div>
 
-            {/* Battery Levels */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+            {/* Battery Levels & Efficiency */}
+            <div className="bg-green-50 rounded-xl p-4 border border-green-200">
+              <div className="flex items-center gap-2 mb-3">
+                <BatteryCharging className="w-4 h-4 text-green-600" />
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                  Battery & Efficiency
+                </h3>
+              </div>
+
+              {/* Battery Levels */}
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Battery Start % *
+                  </label>
+                  <input
+                    {...register("battery_start")}
+                    type="number"
+                    step="any"
+                    min="0"
+                    max="100"
+                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {errors.battery_start && (
+                    <p className="text-xs text-red-600 mt-1">{errors.battery_start.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Battery End % *
+                  </label>
+                  <input
+                    {...register("battery_end")}
+                    type="number"
+                    step="any"
+                    min="0"
+                    max="100"
+                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {errors.battery_end && (
+                    <p className="text-xs text-red-600 mt-1">{errors.battery_end.message}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* kWh Delivered */}
+              <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Battery Start % *
+                  kWh Delivered (from charger/app)
                 </label>
                 <input
-                  {...register("battery_start")}
+                  {...register("kwh_delivered")}
                   type="number"
+                  step="0.001"
                   min="0"
-                  max="100"
+                  placeholder="e.g., 36.794"
                   className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                {errors.battery_start && (
-                  <p className="text-xs text-red-600 mt-1">{errors.battery_start.message}</p>
+                {errors.kwh_delivered && (
+                  <p className="text-xs text-red-600 mt-1">{errors.kwh_delivered.message}</p>
                 )}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Battery End % *
-                </label>
-                <input
-                  {...register("battery_end")}
-                  type="number"
-                  min="0"
-                  max="100"
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {errors.battery_end && (
-                  <p className="text-xs text-red-600 mt-1">{errors.battery_end.message}</p>
-                )}
-              </div>
+              {/* Calculated Values Display */}
+              <EfficiencyDisplay 
+                batteryStart={watch("battery_start") || 0}
+                batteryEnd={watch("battery_end") || 0}
+                kwhDelivered={watch("kwh_delivered")}
+              />
             </div>
 
             {/* Charger Details */}
@@ -883,6 +926,69 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// Efficiency Display Component
+interface EfficiencyDisplayProps {
+  batteryStart: number;
+  batteryEnd: number;
+  kwhDelivered: number | undefined;
+}
+
+function EfficiencyDisplay({ batteryStart, batteryEnd, kwhDelivered }: EfficiencyDisplayProps) {
+  // Calculate kWh stored based on battery percentage change
+  const socChange = batteryEnd - batteryStart;
+  const kwhStored = (socChange / 100) * DEFAULT_BATTERY_CAPACITY;
+  
+  // Calculate efficiency if kWh delivered is provided
+  const efficiency = kwhDelivered && kwhDelivered > 0
+    ? (kwhStored / kwhDelivered) * 100
+    : null;
+
+  // Determine efficiency color
+  const getEfficiencyColor = (eff: number): string => {
+    if (eff > 85) return "text-green-600";
+    if (eff >= 75) return "text-yellow-600";
+    return "text-red-600";
+  };
+
+  const getEfficiencyBg = (eff: number): string => {
+    if (eff > 85) return "bg-green-100";
+    if (eff >= 75) return "bg-yellow-100";
+    return "bg-red-100";
+  };
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {/* kWh Stored (Calculated) */}
+      <div className="p-3 bg-white rounded-lg border border-gray-200">
+        <div className="text-xs text-gray-500 mb-1">kWh Stored (calc)</div>
+        <div className="text-lg font-semibold text-gray-900">
+          {kwhStored > 0 ? `${kwhStored.toFixed(2)} kWh` : "—"}
+        </div>
+        <div className="text-xs text-gray-400">
+          {socChange > 0 ? `+${socChange.toFixed(1)}% × ${DEFAULT_BATTERY_CAPACITY} kWh` : "Enter battery levels"}
+        </div>
+      </div>
+
+      {/* Efficiency % */}
+      <div className={`p-3 rounded-lg border ${efficiency ? getEfficiencyBg(efficiency) : "bg-white border-gray-200"}`}>
+        <div className="text-xs text-gray-500 mb-1">Efficiency</div>
+        <div className={`text-lg font-semibold ${efficiency ? getEfficiencyColor(efficiency) : "text-gray-400"}`}>
+          {efficiency ? `${efficiency.toFixed(1)}%` : "—"}
+        </div>
+        <div className="text-xs text-gray-400">
+          {efficiency 
+            ? efficiency > 85 
+              ? "Great" 
+              : efficiency >= 75 
+                ? "Good" 
+                : "Poor"
+            : "Enter kWh delivered"}
+        </div>
       </div>
     </div>
   );
