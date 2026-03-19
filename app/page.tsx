@@ -11,6 +11,7 @@ export default function Home() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editSession, setEditSession] = useState<Session | null>(null);
   const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const mapRef = useRef<{ flyTo: (lat: number, lng: number) => void } | null>(null);
@@ -83,6 +84,12 @@ export default function Home() {
   const handleSessionCreated = () => {
     fetchSessions();
     setIsModalOpen(false);
+    setEditSession(null);
+  };
+
+  const handleModalClose = () => {
+    setIsModalOpen(false);
+    setEditSession(null);
   };
 
   const handleMarkerClick = (session: Session) => {
@@ -91,6 +98,11 @@ export default function Home() {
 
   const handleLocateOnMap = (lat: number, lng: number) => {
     mapRef.current?.flyTo(lat, lng);
+  };
+
+  const handleEditSession = (session: Session) => {
+    setEditSession(session);
+    setIsModalOpen(true);
   };
 
   return (
@@ -107,7 +119,10 @@ export default function Home() {
             <>
               <span className="text-sm text-muted">{user.email}</span>
               <button
-                onClick={() => setIsModalOpen(true)}
+                onClick={() => {
+                  setEditSession(null);
+                  setIsModalOpen(true);
+                }}
                 className="flex items-center gap-1 px-3 py-2 bg-primary text-white rounded-md text-sm font-medium cursor-pointer border-none hover:bg-blue-600 transition-colors"
               >
                 <Plus size={16} />
@@ -168,15 +183,18 @@ export default function Home() {
             session={selectedSession}
             onClose={() => setSelectedSession(null)}
             onLocate={handleLocateOnMap}
+            onEdit={handleEditSession}
+            currentUserId={user?.id}
           />
         )}
       </div>
 
-      {/* New Log Modal */}
+      {/* New Log / Edit Modal */}
       <NewLogModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={handleModalClose}
         onSuccess={handleSessionCreated}
+        editSession={editSession}
       />
     </div>
   );

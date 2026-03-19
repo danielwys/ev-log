@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useForm, Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { sessionSchema, SessionFormData, wktPoint, extractPlugShareId, PlugShareData } from "@/lib/validation";
-import { supabase } from "@/lib/supabase";
+import { sessionSchema, SessionFormData, wktPoint, extractPlugShareId, PlugShareData, parseWktPoint } from "@/lib/validation";
+import { supabase, Session } from "@/lib/supabase";
 import { 
   X, Upload, MapPin, Loader2, Link2, AlertTriangle, Zap, Cable, Plug
 } from "lucide-react";
@@ -13,9 +13,11 @@ interface NewLogModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  editSession?: Session | null;
 }
 
-export function NewLogModal({ isOpen, onClose, onSuccess }: NewLogModalProps) {
+export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogModalProps) {
+  const isEditMode = !!editSession;
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,6 +53,49 @@ export function NewLogModal({ isOpen, onClose, onSuccess }: NewLogModalProps) {
   const attempts = watch("attempts") || 1;
   const successes = watch("successes") || 0;
   const techniqueRequired = watch("technique_required") || false;
+
+  // Pre-populate form when in edit mode
+  useEffect(() => {
+    if (isEditMode && editSession) {
+      setValue("station_name", editSession.station_name);
+      setValue("operator", editSession.operator);
+      setValue("max_kw", editSession.max_kw);
+      setValue("battery_start", editSession.battery_start);
+      setValue("battery_end", editSession.battery_end);
+      setValue("notes", editSession.notes || "");
+      setValue("photos", editSession.photos || []);
+      setUploadedPhotos(editSession.photos || []);
+      
+      // Parse location
+      try {
+        const { lat, lng } = parseWktPoint(editSession.location);
+        setValue("latitude", lat);
+        setValue("longitude", lng);
+      } catch (e) {
+        console.error("Failed to parse location:", e);
+      }
+
+      // Technical specs
+      setValue("charger_hardware_model", editSession.charger_hardware_model || "");
+      setValue("charger_software", editSession.charger_software || "");
+      setValue("cable_amp_limit", editSession.cable_amp_limit || undefined);
+      setValue("stall_id", editSession.stall_id || "");
+      setValue("plug_id", editSession.plug_id || "");
+      setValue("price_per_kwh", editSession.price_per_kwh || undefined);
+
+      // Connector tracking
+      setValue("connectors_tried", editSession.connectors_tried || []);
+      setValue("successful_connectors", editSession.successful_connectors || []);
+      setValue("attempts", editSession.attempts || 1);
+      setValue("successes", editSession.successes || 0);
+
+      // Error details
+      setValue("error_code", editSession.error_code || "");
+      setValue("failure_type", (editSession.failure_type as any) || "");
+      setValue("technique_required", editSession.technique_required || false);
+      setValue("technique_notes", editSession.technique_notes || "");
+    }
+  }, [isEditMode, editSession, setValue]);
 
   const handleFetchPlugShare = async () => {
     if (!plugShareUrl.trim()) return;
@@ -170,33 +215,82 @@ export function NewLogModal({ isOpen, onClose, onSuccess }: NewLogModalProps) {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error("Not authenticated");
 
-      const { error } = await supabase.from("sessions").insert({
-        user_id: userData.user.id,
-        station_name: data.station_name,
-        operator: data.operator,
-        max_kw: data.max_kw,
-        battery_start: data.battery_start,
-        battery_end: data.battery_end,
-        location: wktPoint(data.latitude, data.longitude),
-        photos: uploadedPhotos,
-        notes: data.notes || null,
-        charger_hardware_model: data.charger_hardware_model || null,
-        charger_software: data.charger_software || null,
-        cable_amp_limit: data.cable_amp_limit || null,
-        stall_id: data.stall_id || null,
-        plug_id: data.plug_id || null,
-        connectors_tried: data.connectors_tried || [],
-        successful_connectors: data.successful_connectors || [],
-        attempts: data.attempts || 1,
-        successes: data.successes || 0,
-        error_code: data.error_code || null,
-        failure_type: data.failure_type || null,
-        technique_required: data.technique_required || false,
-        technique_notes: data.technique_notes || null,
-        price_per_kwh: data.price_per_kwh || null,
-      } as any);
+      if (isEditMode && editSession) {
+        // Update existing session
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        
+        if (!token) {
+          throw new Error("No access token available");
+        }
 
-      if (error) throw error;
+        const response = await fetch(`/api/sessions/${editSession.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            station_name: data.station_name,
+            operator: data.operator,
+            max_kw: data.max_kw,
+            battery_start: data.battery_start,
+            battery_end: data.battery_end,
+            latitude: data.latitude,
+            longitude: data.longitude,
+            notes: data.notes || null,
+            photos: uploadedPhotos,
+            charger_hardware_model: data.charger_hardware_model || null,
+            charger_software: data.charger_software || null,
+            cable_amp_limit: data.cable_amp_limit || null,
+            stall_id: data.stall_id || null,
+            plug_id: data.plug_id || null,
+            connectors_tried: data.connectors_tried || [],
+            successful_connectors: data.successful_connectors || [],
+            attempts: data.attempts || 1,
+            successes: data.successes || 0,
+            error_code: data.error_code || null,
+            failure_type: data.failure_type || null,
+            technique_required: data.technique_required || false,
+            technique_notes: data.technique_notes || null,
+            price_per_kwh: data.price_per_kwh || null,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to update session");
+        }
+      } else {
+        // Create new session
+        const { error } = await supabase.from("sessions").insert({
+          user_id: userData.user.id,
+          station_name: data.station_name,
+          operator: data.operator,
+          max_kw: data.max_kw,
+          battery_start: data.battery_start,
+          battery_end: data.battery_end,
+          location: wktPoint(data.latitude, data.longitude),
+          photos: uploadedPhotos,
+          notes: data.notes || null,
+          charger_hardware_model: data.charger_hardware_model || null,
+          charger_software: data.charger_software || null,
+          cable_amp_limit: data.cable_amp_limit || null,
+          stall_id: data.stall_id || null,
+          plug_id: data.plug_id || null,
+          connectors_tried: data.connectors_tried || [],
+          successful_connectors: data.successful_connectors || [],
+          attempts: data.attempts || 1,
+          successes: data.successes || 0,
+          error_code: data.error_code || null,
+          failure_type: data.failure_type || null,
+          technique_required: data.technique_required || false,
+          technique_notes: data.technique_notes || null,
+          price_per_kwh: data.price_per_kwh || null,
+        } as any);
+
+        if (error) throw error;
+      }
 
       reset();
       setUploadedPhotos([]);
@@ -205,7 +299,7 @@ export function NewLogModal({ isOpen, onClose, onSuccess }: NewLogModalProps) {
     } catch (error) {
       console.error("Submit error:", error);
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      alert(`Failed to create session: ${errorMessage}`);
+      alert(`Failed to ${isEditMode ? "update" : "create"} session: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -233,7 +327,7 @@ export function NewLogModal({ isOpen, onClose, onSuccess }: NewLogModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
           <h2 className="text-xl font-bold text-gray-900">
-            New Charging Session
+            {isEditMode ? "Edit Charging Session" : "New Charging Session"}
           </h2>
           <button
             onClick={handleClose}
@@ -250,41 +344,43 @@ export function NewLogModal({ isOpen, onClose, onSuccess }: NewLogModalProps) {
         >
           <div className="flex flex-col gap-5">
             
-            {/* PlugShare URL Input */}
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-              <label className="block text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
-                <Link2 size={16} />
-                PlugShare URL (Optional)
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="url"
-                  value={plugShareUrl}
-                  onChange={(e) => setPlugShareUrl(e.target.value)}
-                  placeholder="https://www.plugshare.com/location/..."
-                  className="flex-1 px-3 py-2 bg-white border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleFetchPlugShare}
-                  disabled={isFetchingPlugShare || !plugShareUrl.trim()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                >
-                  {isFetchingPlugShare ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <MapPin size={16} />
-                  )}
-                  {isFetchingPlugShare ? "Fetching..." : "Import"}
-                </button>
+            {/* PlugShare URL Input - Hide in edit mode */}
+            {!isEditMode && (
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <label className="block text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                  <Link2 size={16} />
+                  PlugShare URL (Optional)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={plugShareUrl}
+                    onChange={(e) => setPlugShareUrl(e.target.value)}
+                    placeholder="https://www.plugshare.com/location/..."
+                    className="flex-1 px-3 py-2 bg-white border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleFetchPlugShare}
+                    disabled={isFetchingPlugShare || !plugShareUrl.trim()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  >
+                    {isFetchingPlugShare ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <MapPin size={16} />
+                    )}
+                    {isFetchingPlugShare ? "Fetching..." : "Import"}
+                  </button>
+                </div>
+                {plugShareError && (
+                  <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
+                    <AlertTriangle size={14} />
+                    {plugShareError}
+                  </p>
+                )}
               </div>
-              {plugShareError && (
-                <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
-                  <AlertTriangle size={14} />
-                  {plugShareError}
-                </p>
-              )}
-            </div>
+            )}
 
             {/* Basic Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -779,10 +875,10 @@ export function NewLogModal({ isOpen, onClose, onSuccess }: NewLogModalProps) {
               {isSubmitting ? (
                 <>
                   <Loader2 size={16} className="animate-spin" />
-                  Saving...
+                  {isEditMode ? "Updating..." : "Saving..."}
                 </>
               ) : (
-                "Save Session"
+                isEditMode ? "Update Session" : "Save Session"
               )}
             </button>
           </div>

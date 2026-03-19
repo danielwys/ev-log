@@ -16,20 +16,20 @@ export interface MapComponentRef {
 }
 
 function getPinColorClasses(pinColor: string | null, isSelected: boolean): string {
-  const baseClasses = "w-10 h-10 rounded-full flex items-center justify-center cursor-pointer border-2 border-white transition-all duration-200 shadow-lg";
-  
+  const baseClasses = "w-10 h-10 rounded-full flex items-center justify-center cursor-pointer border-3 border-white transition-all duration-200";
+
   if (isSelected) {
-    return `${baseClasses} ring-4 ring-blue-400 ring-opacity-50 scale-110`;
+    return `${baseClasses} bg-blue-600 scale-130 shadow-2xl marker-selected z-50`;
   }
-  
+
   switch (pinColor) {
     case "green":
-      return `${baseClasses} bg-green-500 hover:bg-green-600`;
+      return `${baseClasses} bg-green-500 hover:bg-green-600 shadow-lg`;
     case "red":
-      return `${baseClasses} bg-red-500 hover:bg-red-600`;
+      return `${baseClasses} bg-red-500 hover:bg-red-600 shadow-lg`;
     case "yellow":
     default:
-      return `${baseClasses} bg-yellow-500 hover:bg-yellow-600`;
+      return `${baseClasses} bg-yellow-500 hover:bg-yellow-600 shadow-lg`;
   }
 }
 
@@ -108,11 +108,14 @@ export const MapComponent = forwardRef<MapComponentRef, MapComponentProps>(
         try {
           const { lat, lng } = parseWktPoint(session.location);
           const isSelected = selectedSession?.id === session.id;
-          
+
           // Create custom marker element with Tailwind classes
           const el = document.createElement("div");
           el.className = getPinColorClasses(session.pin_color, isSelected);
-          
+          if (isSelected) {
+            el.style.zIndex = "1000";
+          }
+
           // Lightning bolt SVG
           el.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
