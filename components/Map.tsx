@@ -15,6 +15,24 @@ export interface MapComponentRef {
   flyTo: (lat: number, lng: number) => void;
 }
 
+function getPinColorClasses(pinColor: string | null, isSelected: boolean): string {
+  const baseClasses = "w-10 h-10 rounded-full flex items-center justify-center cursor-pointer border-2 border-white transition-all duration-200 shadow-lg";
+  
+  if (isSelected) {
+    return `${baseClasses} ring-4 ring-blue-400 ring-opacity-50 scale-110`;
+  }
+  
+  switch (pinColor) {
+    case "green":
+      return `${baseClasses} bg-green-500 hover:bg-green-600`;
+    case "red":
+      return `${baseClasses} bg-red-500 hover:bg-red-600`;
+    case "yellow":
+    default:
+      return `${baseClasses} bg-yellow-500 hover:bg-yellow-600`;
+  }
+}
+
 export const MapComponent = forwardRef<MapComponentRef, MapComponentProps>(
   ({ sessions, onMarkerClick, selectedSession }, ref) => {
     const mapContainer = useRef<HTMLDivElement>(null);
@@ -82,29 +100,29 @@ export const MapComponent = forwardRef<MapComponentRef, MapComponentProps>(
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
 
+      // Store map reference to avoid null check issues in forEach
+      const mapInstance = map.current;
+      
       // Add markers for each session
       sessions.forEach((session) => {
         try {
           const { lat, lng } = parseWktPoint(session.location);
-
-          // Create custom marker element with Tailwind classes
-          const el = document.createElement("div");
           const isSelected = selectedSession?.id === session.id;
           
-          // Apply Tailwind classes
-          el.className = `
-            w-10 h-10 rounded-full flex items-center justify-center cursor-pointer 
-            border-2 border-white transition-all duration-200
-            ${isSelected ? 'bg-primary shadow-[0_0_0_4px_rgba(59,130,246,0.4)]' : 'bg-secondary shadow-[0_2px_4px_rgba(0,0,0,0.3)]'}
+          // Create custom marker element with Tailwind classes
+          const el = document.createElement("div");
+          el.className = getPinColorClasses(session.pin_color, isSelected);
+          
+          // Lightning bolt SVG
+          el.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
           `;
-          
-          el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
 
-          if (!map.current) return;
-          
           const marker = new maplibregl.Marker({ element: el })
             .setLngLat([lng, lat])
-            .addTo(map.current);
+            .addTo(mapInstance);
 
           el.addEventListener("click", () => {
             onMarkerClick(session);
