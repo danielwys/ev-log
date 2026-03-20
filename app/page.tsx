@@ -1,20 +1,26 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { MapComponent } from "@/components/Map";
 import { SidePanel } from "@/components/SidePanel";
 import { NewLogModal } from "@/components/NewLogModal";
-import { supabase, Session } from "@/lib/supabase";
+import { supabase, Session, LocationGroup, clusterSessionsByLocation } from "@/lib/supabase";
 import { Plus, LogIn, LogOut, MapPin } from "lucide-react";
 
 export default function Home() {
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [selectedLocation, setSelectedLocation] = useState<LocationGroup | null>(null);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editSession, setEditSession] = useState<Session | null>(null);
   const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const mapRef = useRef<{ flyTo: (lat: number, lng: number) => void } | null>(null);
+
+  // Compute location groups from sessions
+  const locationGroups = useMemo(() => {
+    return clusterSessionsByLocation(sessions);
+  }, [sessions]);
 
   useEffect(() => {
     const getUser = async () => {
@@ -78,6 +84,7 @@ export default function Home() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+    setSelectedLocation(null);
     setSelectedSession(null);
   };
 
@@ -92,8 +99,20 @@ export default function Home() {
     setEditSession(null);
   };
 
-  const handleMarkerClick = (session: Session) => {
+  // Click location pin → show Location View in sidebar
+  const handleLocationClick = (location: LocationGroup) => {
+    setSelectedLocation(location);
+    setSelectedSession(null);
+  };
+
+  // Click session in list → show Session Detail View
+  const handleSessionSelect = (session: Session) => {
     setSelectedSession(session);
+  };
+
+  // Back button → return to Location View
+  const handleBackToLocation = () => {
+    setSelectedSession(null);
   };
 
   const handleLocateOnMap = (lat: number, lng: number) => {
@@ -103,6 +122,11 @@ export default function Home() {
   const handleEditSession = (session: Session) => {
     setEditSession(session);
     setIsModalOpen(true);
+  };
+
+  const handleCloseSidePanel = () => {
+    setSelectedLocation(null);
+    setSelectedSession(null);
   };
 
   return (
@@ -170,19 +194,24 @@ export default function Home() {
           ) : (
             <MapComponent
               ref={mapRef}
-              sessions={sessions}
-              onMarkerClick={handleMarkerClick}
+              locationGroups={locationGroups}
+              onLocationClick={handleLocationClick}
+              onSessionClick={handleSessionSelect}
+              selectedLocation={selectedLocation}
               selectedSession={selectedSession}
             />
           )}
         </div>
 
         {/* Side Panel */}
-        {selectedSession && (
+        {(selectedLocation || selectedSession) && (
           <SidePanel
+            location={selectedLocation}
             session={selectedSession}
-            onClose={() => setSelectedSession(null)}
+            onClose={handleCloseSidePanel}
             onLocate={handleLocateOnMap}
+            onSessionSelect={handleSessionSelect}
+            onBackToLocation={handleBackToLocation}
             onEdit={handleEditSession}
             currentUserId={user?.id}
           />

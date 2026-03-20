@@ -7,9 +7,11 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Unwrap params (Next.js 15+ params is a Promise)
+    const { id: sessionId } = await params;
     // Get the authorization header
     const authHeader = request.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -40,7 +42,6 @@ export async function PUT(
     }
 
     const userId = userData.user.id;
-    const sessionId = params.id;
 
     // Parse the request body
     const body = await request.json();
@@ -65,7 +66,7 @@ export async function PUT(
       );
     }
 
-    if (existingSession.user_id !== userId) {
+    if (!existingSession || (existingSession as { user_id: string }).user_id !== userId) {
       return NextResponse.json(
         { error: "Forbidden - you can only edit your own sessions" },
         { status: 403 }
@@ -73,6 +74,7 @@ export async function PUT(
     }
 
     // Build the update object
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updateData: any = {};
 
     // Only include fields that are provided
@@ -108,8 +110,8 @@ export async function PUT(
     }
 
     // Update the session
-    const { data, error } = await supabase
-      .from("sessions")
+    const { data, error } = await (supabase
+      .from("sessions") as any)
       .update(updateData)
       .eq("id", sessionId)
       .select()
