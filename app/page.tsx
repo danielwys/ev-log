@@ -4,86 +4,49 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { MapComponent } from "@/components/Map";
 import { SidePanel } from "@/components/SidePanel";
 import { NewLogModal } from "@/components/NewLogModal";
-import { supabase, Session, LocationGroup, clusterSessionsByLocation } from "@/lib/supabase";
+import { Session, LocationGroup, clusterSessionsByLocation, getSessions } from "@/lib/db";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { Plus, LogIn, LogOut, MapPin } from "lucide-react";
 
 export default function Home() {
+  const { data: session, status } = useSession();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<LocationGroup | null>(null);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editSession, setEditSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const mapRef = useRef<{ flyTo: (lat: number, lng: number) => void } | null>(null);
+
+  const user = session?.user;
+  const isWhitelisted = user?.isWhitelisted || false;
 
   // Compute location groups from sessions
   const locationGroups = useMemo(() => {
     return clusterSessionsByLocation(sessions);
   }, [sessions]);
 
-  useEffect(() => {
-    const getUser = async () => {
-      const { data } = await supabase.auth.getUser();
-      setUser(data.user);
-      setIsLoading(false);
-    };
-    getUser();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null);
-      }
-    );
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, []);
-
   const fetchSessions = useCallback(async () => {
-    if (!user) {
-      setSessions([]);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("sessions")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
+    try {
+      const data = await getSessions();
+      setSessions(data);
+    } catch (error) {
       console.error("Error fetching sessions:", error);
-      return;
+    } finally {
+      setIsLoading(false);
     }
-
-    setSessions(data || []);
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     fetchSessions();
   }, [fetchSessions]);
 
-  const handleSignIn = async () => {
-    const email = prompt("Enter your email for magic link sign-in:");
-    if (!email) return;
-    
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-      },
-    });
-    if (error) {
-      console.error("Sign in error:", error);
-      alert("Error: " + error.message);
-    } else {
-      alert("Check your email (or Mailpit at http://127.0.0.1:54324) for the magic link!");
-    }
+  const handleSignIn = () => {
+    signIn("google");
   };
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  const handleSignOut = () => {
+    signOut();
     setSelectedLocation(null);
     setSelectedSession(null);
   };
@@ -129,6 +92,9 @@ export default function Home() {
     setSelectedSession(null);
   };
 
+  const isAuthenticated = status === "authenticated";
+  const isAuthLoading = status === "loading";
+
   return (
     <div className="flex flex-col h-screen bg-background text-text">
       {/* Header */}
@@ -139,19 +105,26 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-3">
-          {user ? (
+          {isAuthenticated ? (
             <>
-              <span className="text-sm text-muted">{user.email}</span>
-              <button
-                onClick={() => {
-                  setEditSession(null);
-                  setIsModalOpen(true);
-                }}
-                className="flex items-center gap-1 px-3 py-2 bg-primary text-white rounded-md text-sm font-medium cursor-pointer border-none hover:bg-blue-600 transition-colors"
-              >
-                <Plus size={16} />
-                New Log
-              </button>
+              <span className="text-sm text-muted">{user?.email}</span>
+              {!isWhitelisted && (
+                <span className="text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">
+                  Read-only
+                </span>
+              )}
+              {isWhitelisted && (
+                <button
+                  onClick={() => {
+                    setEditSession(null);
+                    setIsModalOpen(true);
+                  }}
+                  className="flex items-center gap-1 px-3 py-2 bg-primary text-white rounded-md text-sm font-medium cursor-pointer border-none hover:bg-blue-600 transition-colors"
+                >
+                  <Plus size={16} />
+                  New Log
+                </button>
+              )}
               <button
                 onClick={handleSignOut}
                 className="flex items-center gap-1 px-3 py-2 bg-transparent text-muted rounded-md text-sm cursor-pointer border border-border hover:bg-gray-100 transition-colors"
@@ -163,10 +136,11 @@ export default function Home() {
           ) : (
             <button
               onClick={handleSignIn}
-              className="flex items-center gap-1 px-3 py-2 bg-primary text-white rounded-md text-sm font-medium cursor-pointer border-none hover:bg-blue-600 transition-colors"
+              disabled={isAuthLoading}
+              className="flex items-center gap-1 px-3 py-2 bg-primary text-white rounded-md text-sm font-medium cursor-pointer border-none hover:bg-blue-600 transition-colors disabled:opacity-50"
             >
               <LogIn size={16} />
-              Sign In
+              {isAuthLoading ? "Loading..." : "Sign In"}
             </button>
           )}
         </div>
@@ -176,20 +150,9 @@ export default function Home() {
       <div className="flex flex-1 overflow-hidden">
         {/* Map */}
         <div className="flex-1 relative">
-          {isLoading ? (
+          {isLoading || isAuthLoading ? (
             <div className="flex items-center justify-center h-full text-muted">
               Loading...
-            </div>
-          ) : !user ? (
-            <div className="flex flex-col items-center justify-center h-full gap-4 text-muted">
-              <MapPin size={48} className="opacity-50" />
-              <p className="text-lg">Sign in to view your charging sessions</p>
-              <button
-                onClick={handleSignIn}
-                className="px-4 py-2 bg-primary text-white rounded-md font-medium cursor-pointer border-none hover:bg-blue-600 transition-colors"
-              >
-                Sign In with Email
-              </button>
             </div>
           ) : (
             <MapComponent
@@ -212,7 +175,7 @@ export default function Home() {
             onLocate={handleLocateOnMap}
             onSessionSelect={handleSessionSelect}
             onBackToLocation={handleBackToLocation}
-            onEdit={handleEditSession}
+            onEdit={isWhitelisted ? handleEditSession : undefined}
             currentUserId={user?.id}
           />
         )}

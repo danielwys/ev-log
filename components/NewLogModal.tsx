@@ -3,11 +3,27 @@
 import { useState, useRef, useEffect } from "react";
 import { useForm, Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { sessionSchema, SessionFormData, wktPoint, extractPlugShareId, PlugShareData, parseWktPoint } from "@/lib/validation";
-import { supabase, Session } from "@/lib/supabase";
-import { 
-  X, Upload, MapPin, Loader2, Link2, AlertTriangle, Zap, Cable, Plug, BatteryCharging
+import {
+  sessionSchema,
+  SessionFormData,
+  wktPoint,
+  extractPlugShareId,
+  PlugShareData,
+  parseWktPoint,
+} from "@/lib/validation";
+import { Session, createSession, updateSession, getPlugShareCache, createPlugShareCache } from "@/lib/db";
+import {
+  X,
+  Upload,
+  MapPin,
+  Loader2,
+  Link2,
+  AlertTriangle,
+  Zap,
+  Cable,
+  BatteryCharging,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 
 // Default battery capacity for GAC Aion V Luxury (can be fetched from vehicle_config later)
 const DEFAULT_BATTERY_CAPACITY = 75.3;
@@ -19,8 +35,14 @@ interface NewLogModalProps {
   editSession?: Session | null;
 }
 
-export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogModalProps) {
+export function NewLogModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  editSession,
+}: NewLogModalProps) {
   const isEditMode = !!editSession;
+  const { data: session } = useSession();
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -68,7 +90,7 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
       setValue("notes", editSession.notes || "");
       setValue("photos", editSession.photos || []);
       setUploadedPhotos(editSession.photos || []);
-      
+
       // Parse location
       try {
         const { lat, lng } = parseWktPoint(editSession.location);
@@ -103,36 +125,62 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
 
   const handleFetchPlugShare = async () => {
     if (!plugShareUrl.trim()) return;
-    
+
     setIsFetchingPlugShare(true);
     setPlugShareError(null);
-    
+
     try {
       const locationId = extractPlugShareId(plugShareUrl);
-      
+
       if (!locationId) {
         setPlugShareError("Could not extract location ID from URL.");
         return;
       }
-      
+
+      // Check cache first
+      const cached = await getPlugShareCache(locationId);
+      if (cached && cached.latitude && cached.longitude) {
+        setValue("station_name", cached.name);
+        setValue("operator", cached.operator || "");
+        setValue("latitude", cached.latitude);
+        setValue("longitude", cached.longitude);
+        setValue("notes", cached.address ? `Address: ${cached.address}` : "");
+        return;
+      }
+
       const response = await fetch(`/api/plugshare?locationId=${locationId}`);
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || "Failed to fetch location data");
       }
-      
+
       const data: PlugShareData = await response.json();
-      
+
       setValue("station_name", data.name);
       setValue("operator", data.operator || "");
       setValue("latitude", data.latitude);
       setValue("longitude", data.longitude);
       setValue("notes", data.address ? `Address: ${data.address}` : "");
-      
+
+      // Cache the result
+      try {
+        await createPlugShareCache({
+          plugshare_id: locationId,
+          name: data.name,
+          address: data.address,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          operator: data.operator,
+        });
+      } catch (e) {
+        console.error("Failed to cache PlugShare data:", e);
+      }
     } catch (error) {
       console.error("PlugShare fetch error:", error);
-      setPlugShareError(error instanceof Error ? error.message : "Failed to fetch PlugShare data");
+      setPlugShareError(
+        error instanceof Error ? error.message : "Failed to fetch PlugShare data"
+      );
     } finally {
       setIsFetchingPlugShare(false);
     }
@@ -145,31 +193,28 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
     setIsUploading(true);
 
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error("Not authenticated");
-
       const uploadedUrls: string[] = [];
 
       for (const file of Array.from(files)) {
-        const fileExt = file.name.split(".").pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-        const filePath = `${userData.user.id}/${fileName}`;
+        const formData = new FormData();
+        formData.append("file", file);
 
-        const { error: uploadError } = await supabase.storage
-          .from("photos")
-          .upload(filePath, file);
+        const response = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
 
-        if (uploadError) throw uploadError;
+        if (!response.ok) {
+          throw new Error("Upload failed");
+        }
 
-        const { data: urlData } = supabase.storage
-          .from("photos")
-          .getPublicUrl(filePath);
-
-        uploadedUrls.push(urlData.publicUrl);
+        const data = await response.json();
+        uploadedUrls.push(data.url);
       }
 
-      setUploadedPhotos((prev) => [...prev, ...uploadedUrls]);
-      setValue("photos", [...uploadedPhotos, ...uploadedUrls]);
+      const newPhotos = [...uploadedPhotos, ...uploadedUrls];
+      setUploadedPhotos(newPhotos);
+      setValue("photos", newPhotos);
     } catch (error) {
       console.error("Upload error:", error);
       alert("Failed to upload photos. Please try again.");
@@ -198,41 +243,41 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
   const removeConnector = (connector: string) => {
     const newConnectors = connectorsTried.filter((c) => c !== connector);
     setValue("connectors_tried", newConnectors);
-    
+
     if (successfulConnectors.includes(connector)) {
-      setValue("successful_connectors", successfulConnectors.filter((c) => c !== connector));
+      setValue(
+        "successful_connectors",
+        successfulConnectors.filter((c) => c !== connector)
+      );
     }
   };
 
   const toggleSuccessfulConnector = (connector: string) => {
     if (successfulConnectors.includes(connector)) {
-      setValue("successful_connectors", successfulConnectors.filter((c) => c !== connector));
+      setValue(
+        "successful_connectors",
+        successfulConnectors.filter((c) => c !== connector)
+      );
     } else {
       setValue("successful_connectors", [...successfulConnectors, connector]);
     }
   };
 
   const onSubmit = async (data: SessionFormData) => {
+    if (!session?.user?.id || !session?.user?.email) {
+      alert("You must be signed in to create a session");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error("Not authenticated");
-
       if (isEditMode && editSession) {
-        // Update existing session
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-        
-        if (!token) {
-          throw new Error("No access token available");
-        }
-
+        // Update existing session via API route
         const response = await fetch(`/api/sessions/${editSession.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
           },
           body: JSON.stringify({
             station_name: data.station_name,
@@ -268,8 +313,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
         }
       } else {
         // Create new session
-        const { error } = await supabase.from("sessions").insert({
-          user_id: userData.user.id,
+        await createSession({
+          user_id: session.user.id,
+          user_email: session.user.email,
           station_name: data.station_name,
           operator: data.operator,
           max_kw: data.max_kw,
@@ -293,9 +339,7 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
           technique_notes: data.technique_notes || null,
           price_per_kwh: data.price_per_kwh || null,
           kwh_delivered: data.kwh_delivered || null,
-        } as any);
-
-        if (error) throw error;
+        });
       }
 
       reset();
@@ -304,7 +348,8 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
       onSuccess();
     } catch (error) {
       console.error("Submit error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
       alert(`Failed to ${isEditMode ? "update" : "create"} session: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
@@ -349,7 +394,6 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
           className="flex-1 overflow-y-auto px-6 py-4"
         >
           <div className="flex flex-col gap-5">
-            
             {/* PlugShare URL Input - Hide in edit mode */}
             {!isEditMode && (
               <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
@@ -401,7 +445,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                   className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 {errors.station_name && (
-                  <p className="text-xs text-red-600 mt-1">{errors.station_name.message}</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {errors.station_name.message}
+                  </p>
                 )}
               </div>
 
@@ -416,7 +462,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                   className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 {errors.operator && (
-                  <p className="text-xs text-red-600 mt-1">{errors.operator.message}</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {errors.operator.message}
+                  </p>
                 )}
               </div>
 
@@ -432,7 +480,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                   className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 {errors.max_kw && (
-                  <p className="text-xs text-red-600 mt-1">{errors.max_kw.message}</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {errors.max_kw.message}
+                  </p>
                 )}
               </div>
             </div>
@@ -452,7 +502,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                   className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 {errors.latitude && (
-                  <p className="text-xs text-red-600 mt-1">{errors.latitude.message}</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {errors.latitude.message}
+                  </p>
                 )}
               </div>
 
@@ -469,7 +521,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                   className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 {errors.longitude && (
-                  <p className="text-xs text-red-600 mt-1">{errors.longitude.message}</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {errors.longitude.message}
+                  </p>
                 )}
               </div>
             </div>
@@ -498,7 +552,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                     className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   {errors.battery_start && (
-                    <p className="text-xs text-red-600 mt-1">{errors.battery_start.message}</p>
+                    <p className="text-xs text-red-600 mt-1">
+                      {errors.battery_start.message}
+                    </p>
                   )}
                 </div>
 
@@ -515,7 +571,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                     className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   {errors.battery_end && (
-                    <p className="text-xs text-red-600 mt-1">{errors.battery_end.message}</p>
+                    <p className="text-xs text-red-600 mt-1">
+                      {errors.battery_end.message}
+                    </p>
                   )}
                 </div>
               </div>
@@ -534,12 +592,14 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                   className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 {errors.kwh_delivered && (
-                  <p className="text-xs text-red-600 mt-1">{errors.kwh_delivered.message}</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {errors.kwh_delivered.message}
+                  </p>
                 )}
               </div>
 
               {/* Calculated Values Display */}
-              <EfficiencyDisplay 
+              <EfficiencyDisplay
                 batteryStart={watch("battery_start") || 0}
                 batteryEnd={watch("battery_end") || 0}
                 kwhDelivered={watch("kwh_delivered")}
@@ -631,10 +691,10 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
             {/* Connector Tracking */}
             <div className="border-t border-gray-200 pt-4">
               <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-                <Plug size={16} className="text-green-600" />
+                <Zap size={16} className="text-green-600" />
                 Connector Tracking
               </h3>
-              
+
               <div className="space-y-4">
                 {/* Add Connector */}
                 <div>
@@ -668,7 +728,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                 {/* Connector List */}
                 {connectorsTried.length > 0 && (
                   <div className="bg-gray-50 p-3 rounded-lg">
-                    <p className="text-xs font-medium text-gray-600 mb-2">Click to mark as successful:</p>
+                    <p className="text-xs font-medium text-gray-600 mb-2">
+                      Click to mark as successful:
+                    </p>
                     <div className="flex flex-wrap gap-2">
                       {connectorsTried.map((connector) => (
                         <button
@@ -681,7 +743,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                               : "bg-gray-200 text-gray-700 border border-gray-300"
                           }`}
                         >
-                          {successfulConnectors.includes(connector) && <Zap size={12} />}
+                          {successfulConnectors.includes(connector) && (
+                            <Zap size={12} />
+                          )}
                           {connector}
                           <span
                             onClick={(e) => {
@@ -690,13 +754,14 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                             }}
                             className="ml-1 cursor-pointer hover:text-red-500"
                           >
-                            &times;
+                            ×
                           </span>
                         </button>
                       ))}
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
-                      {successfulConnectors.length} of {connectorsTried.length} connectors worked
+                      {successfulConnectors.length} of {connectorsTried.length}{" "}
+                      connectors worked
                     </p>
                   </div>
                 )}
@@ -710,7 +775,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setValue("attempts", Math.max(1, attempts - 1))}
+                        onClick={() =>
+                          setValue("attempts", Math.max(1, attempts - 1))
+                        }
                         className="p-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
                       >
                         -
@@ -738,7 +805,9 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setValue("successes", Math.max(0, successes - 1))}
+                        onClick={() =>
+                          setValue("successes", Math.max(0, successes - 1))
+                        }
                         className="p-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
                       >
                         -
@@ -751,7 +820,12 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                       />
                       <button
                         type="button"
-                        onClick={() => setValue("successes", Math.min(attempts, successes + 1))}
+                        onClick={() =>
+                          setValue(
+                            "successes",
+                            Math.min(attempts, successes + 1)
+                          )
+                        }
                         className="p-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
                       >
                         +
@@ -809,11 +883,14 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                   id="technique_required"
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />
-                <label htmlFor="technique_required" className="text-sm font-medium text-gray-700">
+                <label
+                  htmlFor="technique_required"
+                  className="text-sm font-medium text-gray-700"
+                >
                   Special technique required to connect
                 </label>
               </div>
-              
+
               {techniqueRequired && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -835,11 +912,11 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                 General Notes
               </label>
               <textarea
-                {...register("notes")}
-                rows={3}
-                placeholder="Any additional notes about this charging session..."
-                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-vertical"
-              />
+                  {...register("notes")}
+                  rows={3}
+                  placeholder="Any additional notes about this charging session..."
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-vertical"
+                />
             </div>
 
             {/* Photo Upload */}
@@ -920,8 +997,10 @@ export function NewLogModal({ isOpen, onClose, onSuccess, editSession }: NewLogM
                   <Loader2 size={16} className="animate-spin" />
                   {isEditMode ? "Updating..." : "Saving..."}
                 </>
+              ) : isEditMode ? (
+                "Update Session"
               ) : (
-                isEditMode ? "Update Session" : "Save Session"
+                "Save Session"
               )}
             </button>
           </div>
@@ -938,15 +1017,18 @@ interface EfficiencyDisplayProps {
   kwhDelivered: number | undefined;
 }
 
-function EfficiencyDisplay({ batteryStart, batteryEnd, kwhDelivered }: EfficiencyDisplayProps) {
+function EfficiencyDisplay({
+  batteryStart,
+  batteryEnd,
+  kwhDelivered,
+}: EfficiencyDisplayProps) {
   // Calculate kWh stored based on battery percentage change
   const socChange = batteryEnd - batteryStart;
   const kwhStored = (socChange / 100) * DEFAULT_BATTERY_CAPACITY;
-  
+
   // Calculate efficiency if kWh delivered is provided
-  const efficiency = kwhDelivered && kwhDelivered > 0
-    ? (kwhStored / kwhDelivered) * 100
-    : null;
+  const efficiency =
+    kwhDelivered && kwhDelivered > 0 ? (kwhStored / kwhDelivered) * 100 : null;
 
   // Determine efficiency color
   const getEfficiencyColor = (eff: number): string => {
@@ -970,23 +1052,33 @@ function EfficiencyDisplay({ batteryStart, batteryEnd, kwhDelivered }: Efficienc
           {kwhStored > 0 ? `${kwhStored.toFixed(2)} kWh` : "—"}
         </div>
         <div className="text-xs text-gray-400">
-          {socChange > 0 ? `+${socChange.toFixed(1)}% × ${DEFAULT_BATTERY_CAPACITY} kWh` : "Enter battery levels"}
+          {socChange > 0
+            ? `+${socChange.toFixed(1)}% × ${DEFAULT_BATTERY_CAPACITY} kWh`
+            : "Enter battery levels"}
         </div>
       </div>
 
       {/* Efficiency % */}
-      <div className={`p-3 rounded-lg border ${efficiency ? getEfficiencyBg(efficiency) : "bg-white border-gray-200"}`}>
+      <div
+        className={`p-3 rounded-lg border ${
+          efficiency ? getEfficiencyBg(efficiency) : "bg-white border-gray-200"
+        }`}
+      >
         <div className="text-xs text-gray-500 mb-1">Efficiency</div>
-        <div className={`text-lg font-semibold ${efficiency ? getEfficiencyColor(efficiency) : "text-gray-400"}`}>
+        <div
+          className={`text-lg font-semibold ${
+            efficiency ? getEfficiencyColor(efficiency) : "text-gray-400"
+          }`}
+        >
           {efficiency ? `${efficiency.toFixed(1)}%` : "—"}
         </div>
         <div className="text-xs text-gray-400">
-          {efficiency 
-            ? efficiency > 85 
-              ? "Great" 
-              : efficiency >= 75 
-                ? "Good" 
-                : "Poor"
+          {efficiency
+            ? efficiency > 85
+              ? "Great"
+              : efficiency >= 75
+              ? "Good"
+              : "Poor"
             : "Enter kWh delivered"}
         </div>
       </div>

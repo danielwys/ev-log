@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SessionProvider } from "next-auth/react";
 import "./index.css";
 import "./globals.css";
 
@@ -20,7 +21,9 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <SessionProvider>{children}</SessionProvider>
+      </body>
     </html>
   );
 }

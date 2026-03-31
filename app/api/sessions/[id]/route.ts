@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { Database } from "@/lib/database.types";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { auth } from "@/auth";
+import { updateSession, checkWhitelist } from "@/lib/db";
+import { wktPoint } from "@/lib/validation";
 
 export async function PUT(
   request: NextRequest,
@@ -12,66 +10,29 @@ export async function PUT(
   try {
     // Unwrap params (Next.js 15+ params is a Promise)
     const { id: sessionId } = await params;
-    // Get the authorization header
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
+
+    // Check authentication
+    const session = await auth();
+    if (!session?.user?.id || !session?.user?.email) {
       return NextResponse.json(
-        { error: "Unauthorized - no token provided" },
+        { error: "Unauthorized - not authenticated" },
         { status: 401 }
       );
     }
 
-    const token = authHeader.split(" ")[1];
+    const userId = session.user.id;
 
-    // Create a new Supabase client with the user's token
-    const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    });
-
-    // Verify the user
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError || !userData.user) {
+    // Check whitelist
+    const isWhitelisted = await checkWhitelist(userId);
+    if (!isWhitelisted) {
       return NextResponse.json(
-        { error: "Unauthorized - invalid token" },
-        { status: 401 }
-      );
-    }
-
-    const userId = userData.user.id;
-
-    // Parse the request body
-    const body = await request.json();
-
-    // First, check if the session belongs to the user
-    const { data: existingSession, error: fetchError } = await supabase
-      .from("sessions")
-      .select("user_id")
-      .eq("id", sessionId)
-      .single();
-
-    if (fetchError) {
-      if (fetchError.code === "PGRST116") {
-        return NextResponse.json(
-          { error: "Session not found" },
-          { status: 404 }
-        );
-      }
-      return NextResponse.json(
-        { error: "Failed to fetch session" },
-        { status: 500 }
-      );
-    }
-
-    if (!existingSession || (existingSession as { user_id: string }).user_id !== userId) {
-      return NextResponse.json(
-        { error: "Forbidden - you can only edit your own sessions" },
+        { error: "Forbidden - user not whitelisted" },
         { status: 403 }
       );
     }
+
+    // Parse the request body
+    const body = await request.json();
 
     // Build the update object
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -105,27 +66,14 @@ export async function PUT(
       const lat = parseFloat(body.latitude);
       const lng = parseFloat(body.longitude);
       if (!isNaN(lat) && !isNaN(lng)) {
-        updateData.location = `SRID=4326;POINT(${lng} ${lat})`;
+        updateData.location = wktPoint(lat, lng);
       }
     }
 
     // Update the session
-    const { data, error } = await (supabase
-      .from("sessions") as any)
-      .update(updateData)
-      .eq("id", sessionId)
-      .select()
-      .single();
+    const updatedSession = await updateSession(sessionId, updateData);
 
-    if (error) {
-      console.error("Update error:", error);
-      return NextResponse.json(
-        { error: "Failed to update session", details: error.message },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ data });
+    return NextResponse.json({ data: updatedSession });
   } catch (error) {
     console.error("Unexpected error:", error);
     return NextResponse.json(

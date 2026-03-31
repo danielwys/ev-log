@@ -1,9 +1,9 @@
 version: "3.8"
 
 services:
-  # PostgreSQL with PostGIS
+  # PostgreSQL with PostGIS (using Supabase image already available)
   db:
-    image: postgis/postgis:15-3.3
+    image: public.ecr.aws/supabase/postgres:17.6.1.095
     container_name: ev-log-db
     restart: unless-stopped
     environment:
@@ -12,7 +12,7 @@ services:
       POSTGRES_DB: ev_log
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -21,20 +21,22 @@ services:
       timeout: 5s
       retries: 5
 
-  # Supabase Storage (MinIO for local dev)
-  storage:
-    image: minio/minio:latest
-    container_name: ev-log-storage
+  # PostgREST - REST API for PostgreSQL (using Supabase image already available)
+  postgrest:
+    image: public.ecr.aws/supabase/postgrest:v14.5
+    container_name: ev-log-api
     restart: unless-stopped
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: ${STORAGE_PASSWORD:-minioadmin}
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio_data:/data
+      PGRST_DB_URI: postgres://postgres:${DB_PASSWORD:-postgres}@db:5432/ev_log
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: web_anon
+      PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3001
+      PGRST_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      PGRST_JWT_AUD: "ev-logbook"
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "3001:3000"
+    depends_on:
+      - db
 
   # Next.js Development Server
   app:
@@ -45,8 +47,12 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=development
-      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:-http://localhost:54321}
-      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY:-anon-key}
+      - DATABASE_URL=postgres://postgres:${DB_PASSWORD:-postgres}@db:5432/ev_log
+      - POSTGREST_URL=http://postgrest:3000
+      - NEXTAUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-nextauth-secret-change-in-production}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
     volumes:
       - .:/app
       - /app/node_modules
@@ -55,9 +61,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      db:
-        condition: service_healthy
+      - db
+      - postgrest
 
 volumes:
   postgres_data:
-  minio_data:

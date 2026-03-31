@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getPlugShareCache, createPlugShareCache } from "@/lib/db";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+async function geocodeAddress(
+  address: string
+): Promise<{ lat: number; lng: number } | null> {
   try {
     const response = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`,
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+        address
+      )}&limit=1`,
       {
         headers: {
           "User-Agent": "EVLogbook/1.0 (research project)",
@@ -41,18 +42,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Create server-side supabase client
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
   try {
     // STEP 1: Check local cache first
-    const { data: cachedData, error: cacheError } = await supabase
-      .from("plugshare_cache")
-      .select("*")
-      .eq("plugshare_id", locationId)
-      .single();
+    const cachedData = await getPlugShareCache(locationId);
 
-    if (cachedData && !cacheError) {
+    if (cachedData) {
       console.log("Serving PlugShare data from cache:", locationId);
       return NextResponse.json({
         name: cachedData.name,
@@ -66,16 +60,13 @@ export async function GET(request: NextRequest) {
 
     // STEP 2: Not in cache, scrape from PlugShare
     console.log("Fetching PlugShare data from source:", locationId);
-    
-    const response = await fetch(
-      `https://www.plugshare.com/location/${locationId}`,
-      {
-        headers: {
-          "Accept": "text/html",
-          "User-Agent": "Mozilla/5.0 (compatible; EVLogbook/1.0)",
-        },
-      }
-    );
+
+    const response = await fetch(`https://www.plugshare.com/location/${locationId}`, {
+      headers: {
+        Accept: "text/html",
+        "User-Agent": "Mozilla/5.0 (compatible; EVLogbook/1.0)",
+      },
+    });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -90,9 +81,12 @@ export async function GET(request: NextRequest) {
     const html = await response.text();
 
     // Try multiple patterns to extract data
-    
+
     // Pattern 1: JSON-LD structured data (most reliable)
-    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/);
+    const jsonLdMatch = html.match(
+      /<script type="application\/ld\+json">([^<]+)<\/script>/
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let parsedData: any = null;
     if (jsonLdMatch) {
       try {
@@ -105,7 +99,7 @@ export async function GET(request: NextRequest) {
     // Pattern 2: Meta tags
     const titleMatch = html.match(/<meta property="og:title" content="([^"]+)"/);
     const descMatch = html.match(/<meta property="og:description" content="([^"]+)"/);
-    
+
     // Pattern 3: Look for coordinates in various formats
     const coordPatterns = [
       /"latitude":\s*([-\d.]+)/,
@@ -142,7 +136,7 @@ export async function GET(request: NextRequest) {
     // Pattern 4: Extract name and address from title
     let name = "Unknown Station";
     let address = "";
-    
+
     if (titleMatch) {
       const fullTitle = titleMatch[1].replace(" - PlugShare", "").trim();
       // Split on " | " to separate name from address
@@ -192,9 +186,8 @@ export async function GET(request: NextRequest) {
     };
 
     // STEP 4: Save to cache for future requests
-    const { error: insertError } = await supabase
-      .from("plugshare_cache")
-      .insert({
+    try {
+      await createPlugShareCache({
         plugshare_id: locationId,
         name: result.name,
         address: result.address,
@@ -202,11 +195,9 @@ export async function GET(request: NextRequest) {
         longitude: result.longitude,
         operator: result.operator,
       });
-
-    if (insertError) {
-      console.error("Failed to cache PlugShare data:", insertError);
-    } else {
       console.log("Cached PlugShare data:", locationId);
+    } catch (e) {
+      console.error("Failed to cache PlugShare data:", e);
     }
 
     return NextResponse.json(result);

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import maplibregl from "maplibre-gl";
-import { LocationGroup, Session } from "@/lib/supabase";
+import { LocationGroup, Session } from "@/lib/db";
 
 interface MapComponentProps {
   locationGroups: LocationGroup[];
@@ -16,8 +16,12 @@ export interface MapComponentRef {
   flyTo: (lat: number, lng: number) => void;
 }
 
-function getClusterPinColorClasses(pinColor: string | null, isSelected: boolean): string {
-  const baseClasses = "relative flex items-center justify-center cursor-pointer border-3 border-white transition-all duration-200";
+function getClusterPinColorClasses(
+  pinColor: string | null,
+  isSelected: boolean
+): string {
+  const baseClasses =
+    "relative flex items-center justify-center cursor-pointer border-3 border-white transition-all duration-200";
 
   if (isSelected) {
     return `${baseClasses} w-14 h-14 rounded-full bg-blue-600 scale-130 shadow-2xl ring-4 ring-blue-300`;
@@ -35,8 +39,9 @@ function getClusterPinColorClasses(pinColor: string | null, isSelected: boolean)
 }
 
 function getCountBadgeClasses(pinColor: string | null): string {
-  const baseClasses = "absolute -top-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white border-2 border-white shadow-md";
-  
+  const baseClasses =
+    "absolute -top-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white border-2 border-white shadow-md";
+
   switch (pinColor) {
     case "green":
       return `${baseClasses} bg-green-700`;
@@ -49,7 +54,10 @@ function getCountBadgeClasses(pinColor: string | null): string {
 }
 
 export const MapComponent = forwardRef<MapComponentRef, MapComponentProps>(
-  ({ locationGroups, onLocationClick, onSessionClick, selectedLocation, selectedSession }, ref) => {
+  (
+    { locationGroups, onLocationClick, onSessionClick, selectedLocation, selectedSession },
+    ref
+  ) => {
     const mapContainer = useRef<HTMLDivElement>(null);
     const map = useRef<maplibregl.Map | null>(null);
     const markersRef = useRef<maplibregl.Marker[]>([]);
@@ -120,7 +128,11 @@ export const MapComponent = forwardRef<MapComponentRef, MapComponentProps>(
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
           </svg>
-          ${location.sessionCount > 1 ? `<span class="${getCountBadgeClasses(location.pinColor)}">${location.sessionCount}</span>` : ""}
+          ${
+            location.sessionCount > 1
+              ? `<span class="${getCountBadgeClasses(location.pinColor)}">${location.sessionCount}</span>`
+              : ""
+          }
         `;
 
         const marker = new maplibregl.Marker({ element: el })
@@ -139,7 +151,9 @@ export const MapComponent = forwardRef<MapComponentRef, MapComponentProps>(
     useEffect(() => {
       if (selectedSession && map.current) {
         try {
-          const match = selectedSession.location.match(/POINT\(([^ ]+) ([^)]+)\)/);
+          const match = selectedSession.location.match(
+            /POINT\(([^ ]+) ([^)]+)\)/
+          );
           if (match) {
             const lng = parseFloat(match[1]);
             const lat = parseFloat(match[2]);
