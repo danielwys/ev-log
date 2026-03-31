@@ -40,9 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-## Panda
-styled-system
-styled-system-studio.env.local
-# Panda CSS
+# Panda CSS (vestigial - using Tailwind now)
 styled-system
 styled-system-studio
+.env.local
