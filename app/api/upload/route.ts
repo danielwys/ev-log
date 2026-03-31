@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { writeFile, mkdir } from "fs/promises";
-import { existsSync } from "fs";
-import path from "path";
+import { processImage, validateImageFile } from "@/lib/image-processor";
 
-// Simple file upload handler
-// In production, you'd want to use something like S3, Cloudflare R2, etc.
+/**
+ * Image upload handler with Sharp processing
+ * 
+ * Processing pipeline:
+ * 1. Validate file (type, size)
+ * 2. Save original to public/uploads/raw/
+ * 3. Generate WebP version (quality 85) to public/uploads/processed/
+ * 4. Generate thumbnail (400px width, quality 70) to public/uploads/processed/
+ * 5. Return URLs for all versions
+ */
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
@@ -21,47 +27,72 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    // Validate file type
-    if (!file.type.startsWith("image/")) {
-      return NextResponse.json(
-        { error: "Only image files are allowed" },
-        { status: 400 }
-      );
+    // Validate file
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: "File size exceeds 10MB limit" },
-        { status: 400 }
-      );
-    }
-
-    // Generate unique filename
+    // Read file buffer
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    const fileExt = file.name.split(".").pop() || "jpg";
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-    
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = path.join(process.cwd(), "public", "uploads");
-    if (!existsSync(uploadsDir)) {
-      await mkdir(uploadsDir, { recursive: true });
-    }
 
-    // Write file
-    const filePath = path.join(uploadsDir, fileName);
-    await writeFile(filePath, buffer);
+    // Process image with Sharp
+    const processed = await processImage(buffer, file.name, file.type);
 
-    // Return public URL
-    const publicUrl = `/uploads/${fileName}`;
-
-    return NextResponse.json({ url: publicUrl });
+    // Return all image URLs
+    return NextResponse.json({
+      success: true,
+      urls: {
+        original: processed.originalPath,
+        full: processed.webpPath,
+        thumbnail: processed.thumbnailPath,
+      },
+      metadata: {
+        width: processed.width,
+        height: processed.height,
+        originalSize: processed.fileSizeBytes,
+        webpSize: processed.webpSizeBytes,
+        thumbnailSize: processed.thumbnailSizeBytes,
+      },
+    });
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(
-      { error: "Failed to upload file" },
+      { error: "Failed to process image" },
       { status: 500 }
     );
   }
+}
+
+/**
+ * Handle multiple file uploads
+ * Used by agent-create endpoint
+ */
+export async function handleMultipleUploads(
+  files: File[]
+): Promise<Array<{ original: string; full: string; thumbnail: string }>> {
+  const results = [];
+
+  for (const file of files) {
+    // Validate file
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      console.warn(`Skipping invalid file ${file.name}: ${validation.error}`);
+      continue;
+    }
+
+    // Read and process
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    const processed = await processImage(buffer, file.name, file.type);
+
+    results.push({
+      original: processed.originalPath,
+      full: processed.webpPath,
+      thumbnail: processed.thumbnailPath,
+    });
+  }
+
+  return results;
 }

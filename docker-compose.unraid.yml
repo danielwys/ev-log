@@ -64,6 +64,7 @@ services:
       NEXT_PUBLIC_APP_URL: ${NEXTAUTH_URL:-http://your-unraid-ip:3000}
     volumes:
       # Persist uploads outside container
+      # Raw originals stored in raw/, processed WebP/thumbnails in processed/
       - /mnt/user/appdata/ev-log/uploads:/app/public/uploads
     networks:
       - ev-log-network

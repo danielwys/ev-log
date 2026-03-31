@@ -34,6 +34,37 @@ export interface Session {
   kwh_delivered: number | null;
 }
 
+export interface SessionImage {
+  id: string;
+  session_id: string;
+  original_path: string;
+  webp_path: string;
+  thumbnail_path: string;
+  original_filename: string;
+  file_size_bytes: number;
+  webp_size_bytes: number | null;
+  thumbnail_size_bytes: number | null;
+  width: number;
+  height: number;
+  mime_type: string;
+  created_at: string;
+}
+
+export interface InsertSessionImage {
+  id?: string;
+  session_id: string;
+  original_path: string;
+  webp_path: string;
+  thumbnail_path: string;
+  original_filename: string;
+  file_size_bytes: number;
+  webp_size_bytes?: number | null;
+  thumbnail_size_bytes?: number | null;
+  width: number;
+  height: number;
+  mime_type: string;
+}
+
 export interface InsertSession {
   id?: string;
   user_id: string;
@@ -481,5 +512,51 @@ export function calculatePinColor(
     return "yellow";
   } else {
     return "red";
+  }
+}
+
+// Session Images API
+export async function getSessionImages(sessionId: string): Promise<SessionImage[]> {
+  const response = await fetchFromPostgREST(
+    `/session_images?session_id=eq.${encodeURIComponent(sessionId)}&order=created_at.desc&select=*`
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch session images: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function createSessionImage(
+  image: InsertSessionImage
+): Promise<SessionImage> {
+  const response = await fetchFromPostgREST("/session_images", {
+    method: "POST",
+    body: JSON.stringify(image),
+    headers: {
+      Prefer: "return=representation",
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to create session image: ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data[0];
+}
+
+export async function deleteSessionImage(id: string): Promise<void> {
+  const response = await fetchFromPostgREST(
+    `/session_images?id=eq.${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete session image: ${response.statusText}`);
   }
 }

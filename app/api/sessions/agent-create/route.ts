@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSessionAsService } from "@/lib/db";
-import { InsertSession } from "@/lib/db";
+import { createSessionAsService, InsertSession, FailureType } from "@/lib/db";
+import { processImage, validateImageFile } from "@/lib/image-processor";
 
 const AGENT_API_KEY = process.env.AGENT_API_KEY;
 const SERVICE_USER_ID = "service-agent";
@@ -10,6 +10,12 @@ const SERVICE_USER_EMAIL = "agent@local";
  * Agent service endpoint for creating charging sessions
  * Authenticated via API key (not OAuth)
  * Pre-whitelisted service account
+ * 
+ * Image processing:
+ * - Saves original uploads to public/uploads/raw/
+ * - Generates WebP versions (quality 85) to public/uploads/processed/
+ * - Generates thumbnails (400px width, quality 70) to public/uploads/processed/
+ * - Stores WebP URLs in session.photos for gallery display
  */
 export async function POST(request: NextRequest) {
   try {
@@ -23,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse request body (JSON or FormData)
-    let data: Record<string, any> = {};
+    let data: Record<string, string | number | boolean | null> = {};
     let photos: string[] = [];
     
     const contentType = request.headers.get("Content-Type") || "";
@@ -32,30 +38,28 @@ export async function POST(request: NextRequest) {
       // Handle FormData
       const formData = await request.formData();
       formData.forEach((value, key) => {
-        data[key] = value;
+        if (key !== "photos") {
+          data[key] = value as string;
+        }
       });
       
       // Handle photo uploads from FormData
       const photoFiles = formData.getAll("photos") as File[];
-      for (const file of photoFiles) {
-        if (file && file.size > 0) {
-          const uploadUrl = await uploadPhoto(file);
-          if (uploadUrl) photos.push(uploadUrl);
-        }
-      }
+      const processedPhotos = await processAgentPhotos(photoFiles);
+      photos = processedPhotos.map(p => p.full); // Use WebP for session.photos
     } else {
       // Handle JSON
       data = await request.json();
     }
 
     // Extract required fields
-    const station_name = data.station_name as string;
-    const operator = data.operator as string;
-    const max_kw = parseFloat(data.max_kw);
-    const battery_start = parseFloat(data.battery_start);
-    const battery_end = parseFloat(data.battery_end);
-    const latitude = parseFloat(data.latitude);
-    const longitude = parseFloat(data.longitude);
+    const station_name = String(data.station_name);
+    const operator = String(data.operator);
+    const max_kw = parseFloat(String(data.max_kw));
+    const battery_start = parseFloat(String(data.battery_start));
+    const battery_end = parseFloat(String(data.battery_end));
+    const latitude = parseFloat(String(data.latitude));
+    const longitude = parseFloat(String(data.longitude));
 
     // Validate required fields
     if (!station_name || !operator || isNaN(max_kw) || isNaN(battery_start) || 
@@ -77,17 +81,17 @@ export async function POST(request: NextRequest) {
       battery_end,
       location: `SRID=4326;POINT(${longitude} ${latitude})`,
       photos,
-      notes: data.notes || null,
-      charger_hardware_model: data.charger_hardware_model || null,
-      charger_software: data.charger_software || null,
-      cable_amp_limit: data.cable_amp_limit ? parseInt(data.cable_amp_limit) : null,
-      stall_id: data.stall_id || null,
-      plug_id: data.plug_id || null,
-      price_per_kwh: data.price_per_kwh ? parseFloat(data.price_per_kwh) : null,
-      kwh_delivered: data.kwh_delivered ? parseFloat(data.kwh_delivered) : null,
-      failure_type: data.failure_type || null,
+      notes: getStringOrNull(data.notes),
+      charger_hardware_model: getStringOrNull(data.charger_hardware_model),
+      charger_software: getStringOrNull(data.charger_software),
+      cable_amp_limit: getNumberOrNull(data.cable_amp_limit),
+      stall_id: getStringOrNull(data.stall_id),
+      plug_id: getStringOrNull(data.plug_id),
+      price_per_kwh: getNumberOrNull(data.price_per_kwh),
+      kwh_delivered: getNumberOrNull(data.kwh_delivered),
+      failure_type: getFailureTypeOrNull(data.failure_type),
       technique_required: data.technique_required === true || data.technique_required === "true",
-      technique_notes: data.technique_notes || null,
+      technique_notes: getStringOrNull(data.technique_notes),
     };
 
     // Create session via PostgREST with service authentication
@@ -97,6 +101,7 @@ export async function POST(request: NextRequest) {
       success: true,
       session_id: createdSession.id,
       url: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}`,
+      photos_uploaded: photos.length,
     });
 
   } catch (error) {
@@ -109,36 +114,58 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Upload photo to storage
- * Returns URL or null if failed
+ * Process photos uploaded via agent endpoint
+ * Returns processed image info with all URLs
  */
-async function uploadPhoto(file: File): Promise<string | null> {
-  try {
-    // Create FormData for upload
-    const uploadFormData = new FormData();
-    uploadFormData.append("file", file);
+async function processAgentPhotos(
+  files: File[]
+): Promise<Array<{ original: string; full: string; thumbnail: string }>> {
+  const results = [];
 
-    // Upload to internal upload endpoint
-    const uploadResponse = await fetch(
-      `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/upload`,
-      {
-        method: "POST",
-        headers: {
-          "X-API-Key": process.env.AGENT_API_KEY || "",
-        },
-        body: uploadFormData,
-      }
-    );
-
-    if (!uploadResponse.ok) {
-      console.error("Photo upload failed:", await uploadResponse.text());
-      return null;
+  for (const file of files) {
+    // Validate file
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      console.warn(`Skipping invalid file ${file.name}: ${validation.error}`);
+      continue;
     }
 
-    const uploadData = await uploadResponse.json();
-    return uploadData.url;
-  } catch (error) {
-    console.error("Photo upload error:", error);
-    return null;
+    try {
+      // Read and process
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      const processed = await processImage(buffer, file.name, file.type);
+
+      results.push({
+        original: processed.originalPath,
+        full: processed.webpPath,
+        thumbnail: processed.thumbnailPath,
+      });
+      
+      console.log(`Processed image: ${file.name} -> WebP: ${processed.webpSizeBytes} bytes, Thumb: ${processed.thumbnailSizeBytes} bytes`);
+    } catch (error) {
+      console.error(`Failed to process image ${file.name}:`, error);
+    }
   }
+
+  return results;
+}
+
+// Type-safe helper functions for extracting data values
+function getStringOrNull(value: string | number | boolean | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  return String(value);
+}
+
+function getNumberOrNull(value: string | number | boolean | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const num = parseFloat(String(value));
+  return isNaN(num) ? null : num;
+}
+
+function getFailureTypeOrNull(value: string | number | boolean | null | undefined): FailureType | null {
+  if (value === null || value === undefined) return null;
+  const str = String(value);
+  const validTypes: FailureType[] = ['handshake', 'derating', 'interruption', 'incompatible', 'other'];
+  return validTypes.includes(str as FailureType) ? (str as FailureType) : null;
 }

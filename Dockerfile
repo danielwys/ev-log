@@ -1,9 +1,12 @@
 # Production Dockerfile
 FROM node:20-alpine AS base
 
+# Install dependencies for Sharp image processing
+RUN apk add --no-cache libc6-compat vips-dev
+
 # Install dependencies only when needed
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat vips-dev
 WORKDIR /app
 
 COPY package*.json ./

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Session, LocationGroup } from "@/lib/db";
 import {
   X,
@@ -561,16 +562,7 @@ function SessionDetailView({
             <h3 className="text-sm font-semibold text-gray-700">
               Photos ({session.photos.length})
             </h3>
-            <div className="grid grid-cols-2 gap-2">
-              {session.photos.map((photo, idx) => (
-                <img
-                  key={idx}
-                  src={photo}
-                  alt={`Session photo ${idx + 1}`}
-                  className="w-full h-24 object-cover rounded-lg"
-                />
-              ))}
-            </div>
+            <PhotoGallery photos={session.photos} />
           </div>
         )}
 
@@ -589,6 +581,129 @@ function SessionDetailView({
         </div>
       </div>
     </div>
+  );
+}
+
+interface PhotoGalleryProps {
+  photos: string[];
+}
+
+/**
+ * Photo gallery with thumbnail grid and lightbox
+ * - Displays thumbnails (400px width WebP)
+ * - Opens lightbox with full WebP on click
+ * - Supports original fallback if needed
+ */
+function PhotoGallery({ photos }: PhotoGalleryProps) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const openLightbox = (index: number) => {
+    setCurrentIndex(index);
+    setLightboxOpen(true);
+  };
+
+  const closeLightbox = () => {
+    setLightboxOpen(false);
+  };
+
+  const nextImage = () => {
+    setCurrentIndex((prev) => (prev + 1) % photos.length);
+  };
+
+  const prevImage = () => {
+    setCurrentIndex((prev) => (prev - 1 + photos.length) % photos.length);
+  };
+
+  // Convert full WebP URL to thumbnail URL
+  const getThumbnailUrl = (photoUrl: string): string => {
+    // If it's already a thumbnail, return as-is
+    if (photoUrl.includes("-thumb.webp")) {
+      return photoUrl;
+    }
+    // If it's a processed WebP, convert to thumbnail
+    if (photoUrl.includes("/uploads/processed/")) {
+      return photoUrl.replace(".webp", "-thumb.webp");
+    }
+    // Fallback: return original
+    return photoUrl;
+  };
+
+  return (
+    <>
+      {/* Thumbnail Grid */}
+      <div className="grid grid-cols-2 gap-2">
+        {photos.map((photo, idx) => (
+          <button
+            key={idx}
+            onClick={() => openLightbox(idx)}
+            className="relative w-full h-24 rounded-lg overflow-hidden hover:opacity-90 transition-opacity"
+          >
+            <img
+              src={getThumbnailUrl(photo)}
+              alt={`Session photo ${idx + 1}`}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+          </button>
+        ))}
+      </div>
+
+      {/* Lightbox */}
+      {lightboxOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          onClick={closeLightbox}
+        >
+          {/* Close button */}
+          <button
+            onClick={closeLightbox}
+            className="absolute top-4 right-4 p-2 text-white/80 hover:text-white transition-colors"
+          >
+            <X size={24} />
+          </button>
+
+          {/* Navigation */}
+          {photos.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  prevImage();
+                }}
+                className="absolute left-4 p-2 text-white/80 hover:text-white transition-colors"
+              >
+                <ChevronLeft size={32} />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  nextImage();
+                }}
+                className="absolute right-4 p-2 text-white/80 hover:text-white transition-colors rotate-180"
+              >
+                <ChevronLeft size={32} />
+              </button>
+            </>
+          )}
+
+          {/* Image counter */}
+          {photos.length > 1 && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-sm">
+              {currentIndex + 1} / {photos.length}
+            </div>
+          )}
+
+          {/* Full image */}
+          <img
+            src={photos[currentIndex]}
+            alt={`Photo ${currentIndex + 1}`}
+            className="max-w-[90%] max-h-[90%] object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
   );
 }
 
