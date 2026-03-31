@@ -1,3 +1,6 @@
+// VESTIGIAL: This file is no longer used. Project now uses Tailwind CSS.
+// Kept for reference only. Can be deleted once Tailwind migration is fully verified.
+
 import { defineConfig } from "@pandacss/dev";
 
 export default defineConfig({
