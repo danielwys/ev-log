@@ -43,4 +43,6 @@ next-env.d.ts
 # Panda CSS (vestigial - using Tailwind now)
 styled-system
 styled-system-studio
-.env.local
+
+# Testing
+/coverage
