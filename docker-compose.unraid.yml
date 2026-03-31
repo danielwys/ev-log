@@ -1,27 +1,78 @@
-# EV Charging Logbook - Docker Compose for Unraid
-# This stack includes the full Supabase local development environment
-# Run `supabase start` first to initialize the stack
+# EV Logbook - Production Docker Compose for Unraid
+# PostgREST + PostgreSQL + Next.js (no Supabase)
 
 version: "3.8"
 
 services:
+  # PostgreSQL with PostGIS
+  db:
+    image: postgis/postgis:17-3.5
+    container_name: ev-log-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ev_log
+    volumes:
+      - /mnt/user/appdata/ev-log/postgres:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - ev-log-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgREST - REST API for PostgreSQL
+  postgrest:
+    image: postgrest/postgrest:v12.2.0
+    container_name: ev-log-api
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgres://postgres:${DB_PASSWORD}@db:5432/ev_log
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: web_anon
+      PGRST_DB_POOL: 10
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_JWT_AUD: "ev-logbook"
+      PGRST_SERVER_PORT: 3000
+    networks:
+      - ev-log-network
+    depends_on:
+      db:
+        condition: service_healthy
+
   # Next.js Production App
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ev-logbook
+    container_name: ev-log-app
     restart: unless-stopped
     environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:-http://your-unraid-ip:54321}
-      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-    ports:
-      - "${APP_PORT:-3000}:3000"
+      NODE_ENV: production
+      DATABASE_URL: postgres://postgres:${DB_PASSWORD}@db:5432/ev_log
+      POSTGREST_URL: http://postgrest:3000
+      NEXT_PUBLIC_POSTGREST_URL: ${NEXT_PUBLIC_POSTGREST_URL:-http://your-unraid-ip:3001}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://your-unraid-ip:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      AGENT_API_KEY: ${AGENT_API_KEY}
+      NEXT_PUBLIC_APP_URL: ${NEXTAUTH_URL:-http://your-unraid-ip:3000}
+    volumes:
+      # Persist uploads outside container
+      - /mnt/user/appdata/ev-log/uploads:/app/public/uploads
     networks:
-      - ev-logbook-network
+      - ev-log-network
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+      - postgrest
 
 networks:
-  ev-logbook-network:
+  ev-log-network:
     driver: bridge
