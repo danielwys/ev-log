@@ -18,9 +18,6 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Generate Panda CSS
-RUN npx panda codegen
-
 # Build the application
 RUN npm run build
 
