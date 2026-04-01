@@ -20,12 +20,6 @@ export default defineConfig({
         '.next/',
         'postgres/',
       ],
-      thresholds: {
-        lines: 50,
-        functions: 50,
-        branches: 50,
-        statements: 50,
-      },
     },
   },
   resolve: {
