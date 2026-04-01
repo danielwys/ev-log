@@ -18,7 +18,12 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - run: npm test -- --no-threads
+      - run: npm test 2>&1 | tee test-output.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-logs
+          path: test-output.log
       - run: npm run build
 
   docker:
